@@ -27,6 +27,8 @@ export interface EngineOptions {
   packager: Packager;
   store: EventStore;
   agents: Map<string, AgentProfile>;
+  /** §5.8 歧义停机开关：交互模式开，批量实验关（避免跑批时卡在暂停）。 */
+  humanGate?: boolean;
 }
 
 interface NodeState {
@@ -243,8 +245,14 @@ export class Engine {
         }
       });
 
-      // §5.8：分析师产出阻塞性歧义 → 自动暂停转人工（下一节点运行前生效）
-      if (st.node.type === 'agent' && st.node.agent === 'analyst' && result.output && typeof result.output === 'object') {
+      // §5.8：分析师产出阻塞性歧义 → 自动暂停转人工（下一节点运行前生效；批量实验可关）
+      if (
+        this.opts.humanGate !== false &&
+        st.node.type === 'agent' &&
+        st.node.agent === 'analyst' &&
+        result.output &&
+        typeof result.output === 'object'
+      ) {
         const spec = result.output as { ambiguities?: { q: string; blocking: boolean }[] };
         const blocking = (spec.ambiguities ?? []).filter((a) => a.blocking);
         if (blocking.length > 0) {

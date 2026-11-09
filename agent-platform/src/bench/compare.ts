@@ -69,6 +69,7 @@ export async function runCompare(llm: LLMGateway, limit = DATASET.length): Promi
         packager: new SingleHtmlPackager(),
         store,
         agents: ALL_AGENTS,
+        humanGate: false, // 批量实验：歧义不停机
       });
       const runId = engine.start(s.wf, { requirement: item.requirement });
       await engine.wait(runId);
