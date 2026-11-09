@@ -1,4 +1,5 @@
 import { writeFileSync } from 'node:fs';
+import { createHash } from 'node:crypto';
 import { join } from 'node:path';
 import type {
   AgentProfile,
@@ -390,7 +391,13 @@ export class Engine {
     const inputs = this.readInputs(node, ports);
     const artifact = inputs.artifact as { title?: string; html?: string } | undefined;
     const bundle = await this.opts.packager.pack(artifact, runDir);
-    this.emit({ run_id: runId, node_id: node.id, type: 'artifact.created', payload: { bundle } as unknown as Record<string, unknown> });
+    const sha256 = createHash('sha256').update(artifact?.html ?? '').digest('hex');
+    this.emit({
+      run_id: runId,
+      node_id: node.id,
+      type: 'artifact.created',
+      payload: { bundle, sha256 } as unknown as Record<string, unknown>,
+    });
     return { pass: true, output: bundle };
   }
 }

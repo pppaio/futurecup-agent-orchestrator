@@ -296,6 +296,29 @@ async function summary(): Promise<void> {
   console.log(summarizeCsv('runs/results.csv'));
 }
 
+async function replay(): Promise<void> {
+  const runId = process.argv[3];
+  if (!runId) {
+    console.log('用法: npm run replay -- <runId>');
+    process.exitCode = 1;
+    return;
+  }
+  const store = new EventStore('runs');
+  const events = store.replay(runId);
+  if (events.length === 0) {
+    console.log(`未找到 run: ${runId}`);
+    process.exitCode = 1;
+    return;
+  }
+  console.log(`重放 ${runId}：${events.length} 条事件（可复现证据）`);
+  for (const e of events) {
+    const t = new Date(e.ts).toLocaleTimeString('zh-CN', { hour12: false });
+    const node = e.node_id ? ` @${e.node_id}` : '';
+    const brief = JSON.stringify(e.payload).slice(0, 70);
+    console.log(`  #${String(e.seq).padStart(3)} ${t} ${e.type}${node} ${brief}`);
+  }
+}
+
 async function main(): Promise<void> {
   mkdirSync('runs', { recursive: true });
   const cmd = process.argv[2] ?? 'demo:single';
@@ -331,7 +354,7 @@ async function main(): Promise<void> {
       await summary();
       break;
     case 'replay':
-      console.log(`命令 ${cmd} 将在后续里程碑实现`);
+      await replay();
       break;
     default:
       console.log(`未知命令：${cmd}`);
