@@ -216,6 +216,50 @@ async function demoReal(): Promise<void> {
   if (!events.some((e) => e.type === 'run.finished')) process.exitCode = 1;
 }
 
+async function demoGate(): Promise<void> {
+  const store = new EventStore('runs');
+  const fake = new FakeLLM({
+    analyst: () =>
+      JSON.stringify({
+        goal: '未明确的游戏',
+        graphic: true,
+        acceptance: ['页面加载无 console 报错', 'canvas 有非空像素'],
+        assumptions: [],
+        ambiguities: [{ q: '需求没有明确玩法，请指定（如：打砖块/贪吃蛇）', blocking: true }],
+        tasks: [],
+      }),
+    builder: () => JSON.stringify({ title: '打砖块', html: SAMPLE_GAME_HTML }),
+    critic: () => JSON.stringify({ score: 4, gaps: [] }),
+    fixer: () => JSON.stringify({ title: '打砖块', html: SAMPLE_GAME_HTML }),
+  });
+  const engine = new Engine({
+    llm: fake,
+    sandbox: new PlaywrightSandbox(),
+    packager: new SingleHtmlPackager(),
+    store,
+    agents: ALL_AGENTS,
+  });
+  console.log('[demo:gate] §5.8 歧义停机：阻塞性歧义 → 自动暂停 → 人工回答 → 续跑');
+  const runId = engine.start(GAME_GEN_WF, { requirement: '做个好玩的游戏' });
+  await engine.wait(runId);
+  let events = store.replay(runId);
+  const interrupted = events.find((e) => e.type === 'run.interrupted');
+  const reason = (interrupted?.payload as { reason?: string }).reason;
+  const prompt = (interrupted?.payload as { prompt?: string }).prompt;
+  const builderRanBefore = events.some((e) => e.type === 'node.entered' && e.node_id === 'n2');
+  console.log(`暂停原因 : ${reason}`);
+  console.log(`歧义提示 : ${prompt?.split('\n')[0]}`);
+  console.log(`续跑前生成者已运行: ${builderRanBefore}`);
+  engine.resume(runId, '做一个打砖块游戏');
+  await engine.wait(runId);
+  events = store.replay(runId);
+  const finished = events.some((e) => e.type === 'run.finished');
+  console.log(`续跑后终态: ${finished ? 'finished' : 'other'}`);
+  const ok = reason === 'blocking_ambiguities' && !!prompt && !builderRanBefore && finished;
+  console.log(ok ? '\n✅ §5.8 歧义停机跑通' : '\n⚠️ 有环节缺失');
+  if (!ok) process.exitCode = 1;
+}
+
 async function compare(): Promise<void> {
   const key = process.env.DEEPSEEK_API_KEY;
   let llm: LLMGateway;
@@ -270,6 +314,9 @@ async function main(): Promise<void> {
       break;
     case 'demo:real':
       await demoReal();
+      break;
+    case 'demo:gate':
+      await demoGate();
       break;
     case 'bench':
       await bench();

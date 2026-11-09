@@ -53,6 +53,7 @@ interface RunState {
   paused: boolean;
   finished: boolean;
   interruptRequested: boolean;
+  pendingHumanPrompt?: string;
   waiters: (() => void)[];
 }
 
@@ -171,7 +172,15 @@ export class Engine {
       if (rs.interruptRequested) {
         rs.interruptRequested = false;
         rs.paused = true;
-        this.emit({ run_id: rs.runId, type: 'run.interrupted', payload: {} });
+        this.emit({
+          run_id: rs.runId,
+          type: 'run.interrupted',
+          payload: {
+            reason: rs.pendingHumanPrompt ? 'blocking_ambiguities' : 'manual_interrupt',
+            prompt: rs.pendingHumanPrompt,
+          },
+        });
+        rs.pendingHumanPrompt = undefined;
         this.flushWaiters(rs);
         return;
       }
@@ -233,6 +242,16 @@ export class Engine {
           rs.queue.push(e.to);
         }
       });
+
+      // §5.8：分析师产出阻塞性歧义 → 自动暂停转人工（下一节点运行前生效）
+      if (st.node.type === 'agent' && st.node.agent === 'analyst' && result.output && typeof result.output === 'object') {
+        const spec = result.output as { ambiguities?: { q: string; blocking: boolean }[] };
+        const blocking = (spec.ambiguities ?? []).filter((a) => a.blocking);
+        if (blocking.length > 0) {
+          rs.pendingHumanPrompt = blocking.map((b) => '· ' + b.q).join('\n');
+          rs.interruptRequested = true;
+        }
+      }
     }
 
     const hasVerify = rs.wf.nodes.some((n) => n.type === 'verify');
