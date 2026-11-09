@@ -4,6 +4,7 @@ import { FakeLLM, DeepSeekLLM } from './gateway/llm.js';
 import type { LLMGateway } from './gateway/llm.js';
 import { runBench, writeCsv } from './bench/runner.js';
 import { runCompare, writeCompareCsv } from './bench/compare.js';
+import { renderCharts } from './bench/charts.js';
 import { PlaywrightSandbox } from './sandbox/sandbox.js';
 import { SingleHtmlPackager } from './packager/packager.js';
 import { Engine } from './engine/engine.js';
@@ -226,6 +227,12 @@ async function compare(): Promise<void> {
   }
 }
 
+async function charts(): Promise<void> {
+  const out = await renderCharts('runs/results.csv', 'runs/charts');
+  console.log('已生成图表：');
+  for (const p of out) console.log('  ' + p);
+}
+
 async function main(): Promise<void> {
   mkdirSync('runs', { recursive: true });
   const cmd = process.argv[2] ?? 'demo:single';
@@ -250,6 +257,9 @@ async function main(): Promise<void> {
       break;
     case 'compare':
       await compare();
+      break;
+    case 'charts':
+      await charts();
       break;
     case 'replay':
       console.log(`命令 ${cmd} 将在后续里程碑实现`);

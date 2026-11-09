@@ -1,0 +1,62 @@
+import type { RunStatus } from './types';
+
+export const STATUS_TEXT: Record<RunStatus, string> = {
+  running: 'running',
+  paused: 'paused',
+  done: 'done',
+  failed: 'failed',
+  unknown: 'unknown',
+};
+
+export const STATUS_LABEL: Record<RunStatus, string> = {
+  running: '运行中',
+  paused: '已暂停',
+  done: '已完成',
+  failed: '失败',
+  unknown: '未知',
+};
+
+export function StatusBadge({ status }: { status: RunStatus }) {
+  return (
+    <span className={`badge badge-${status}`}>
+      <span className="badge-dot" />
+      {STATUS_LABEL[status]}
+    </span>
+  );
+}
+
+export type NodeState = 'idle' | 'active' | 'done' | 'failed';
+
+export interface NodeMeta {
+  id: string;
+  label: string;
+  hint: string;
+}
+
+// 与后端 workflows/game-gen.ts 的节点 id 一一对应。
+export const NODES: NodeMeta[] = [
+  { id: 'n1', label: '分析师', hint: '拆解需求' },
+  { id: 'n2', label: '生成者', hint: '产出 HTML' },
+  { id: 'n3', label: '硬验证', hint: '沙箱判定' },
+  { id: 'n4', label: '软裁判', hint: '评分缺口' },
+  { id: 'n5', label: '修复者', hint: '回灌修复' },
+  { id: 'n6', label: '打包', hint: '单文件产物' },
+  { id: 'n7', label: '人工确认', hint: '确认点' },
+];
+
+export const NODE_LABEL: Record<string, string> = Object.fromEntries(
+  NODES.map((n) => [n.id, n.label]),
+);
+
+export const NODE_STATE_TEXT: Record<NodeState, string> = {
+  idle: '待执行',
+  active: '执行中',
+  done: '已通过',
+  failed: '未通过',
+};
+
+export function fmtWall(ms: number | null): string {
+  if (ms === null || ms === undefined) return '—';
+  if (ms < 1000) return `${ms} ms`;
+  return `${(ms / 1000).toFixed(2)} s`;
+}

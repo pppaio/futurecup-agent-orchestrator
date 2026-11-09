@@ -1,0 +1,68 @@
+import type { HealthInfo, RunEvent, RunReport } from './types';
+
+async function json<T>(res: Response): Promise<T> {
+  if (!res.ok) {
+    let msg = `HTTP ${res.status}`;
+    try {
+      const body = (await res.json()) as { error?: string };
+      if (body?.error) msg = String(body.error);
+    } catch {
+      /* 忽略非 JSON 响应体 */
+    }
+    throw new Error(msg);
+  }
+  return (await res.json()) as T;
+}
+
+export async function startRun(requirement: string): Promise<{ runId: string }> {
+  const res = await fetch('/api/runs', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ requirement }),
+  });
+  return json<{ runId: string }>(res);
+}
+
+export async function interruptRun(runId: string): Promise<{ ok: boolean }> {
+  const res = await fetch(`/api/runs/${runId}/interrupt`, { method: 'POST' });
+  return json<{ ok: boolean }>(res);
+}
+
+export async function resumeRun(runId: string, instruction: string): Promise<{ ok: boolean }> {
+  const res = await fetch(`/api/runs/${runId}/resume`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ instruction }),
+  });
+  return json<{ ok: boolean }>(res);
+}
+
+export async function getReport(runId: string): Promise<RunReport> {
+  const res = await fetch(`/api/runs/${runId}/report`);
+  return json<RunReport>(res);
+}
+
+export async function getHealth(): Promise<HealthInfo> {
+  const res = await fetch('/api/health');
+  return json<HealthInfo>(res);
+}
+
+/** 打开 SSE 事件流；后端会先回放历史事件再推增量。 */
+export function openEventStream(
+  runId: string,
+  onEvent: (e: RunEvent) => void,
+  onError?: () => void,
+): EventSource {
+  const es = new EventSource(`/api/runs/${runId}/events`);
+  es.onmessage = (msg) => {
+    try {
+      onEvent(JSON.parse(msg.data) as RunEvent);
+    } catch {
+      /* 忽略无法解析的行 */
+    }
+  };
+  if (onError) es.onerror = onError;
+  return es;
+}
+
+export const artifactUrl = (runId: string) => `/api/runs/${runId}/artifact`;
