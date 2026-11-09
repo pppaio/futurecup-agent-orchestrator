@@ -209,11 +209,11 @@
   <div class="kicker">实验</div>
   <h2>实验结果：20 条需求实测</h2>
   <div class="grid g3" style="margin-top:30px;text-align:center">
-    <div class="card"><h3>一次可运行率</h3><div class="big placeholder">【待填】</div><p>单 Agent 基线 __% → 本方案 __%</p></div>
-    <div class="card"><h3>收敛轮次</h3><div class="big placeholder">【待填】</div><p>中位数 __ 轮（上限 3 轮）</p></div>
-    <div class="card"><h3>报错下降</h3><div class="big placeholder">【待填】</div><p>第 1 轮 __ 条 → 第 3 轮 __ 条</p></div>
+    <div class="card"><h3>一次可运行率</h3><div class="big">95% → 100%</div><p>首轮 19/20 · 修复后 20/20</p></div>
+    <div class="card"><h3>收敛轮次</h3><div class="big">中位数 0</div><p>最大 1 轮（上限 3 轮）</p></div>
+    <div class="card"><h3>报错下降</h3><div class="big">0.1 → 0</div><p>第 1 轮平均 0.1 条 → 修复后 0 条</p></div>
   </div>
-  <div class="sub" style="margin-top:26px">口径：5 类 × 4 条（经典复刻/微创新/工具/多维/歧义边界）；L1 硬验证机器判定；p50/p95 报耗时；人评盲评标注主观。图表见方案书【待插】。</div>
+  <div class="sub" style="margin-top:26px">口径：5 类 × 4 条（经典复刻/微创新/工具/多维/歧义边界）；L1 硬验证机器判定；耗时 p50=203s / p95=404s；全实验 61 次调用约 ¥3.71（闲时）。图表见方案书。</div>
   <div class="num">12 / 15</div>
 </section>
 
@@ -223,11 +223,12 @@
   <h2>三策略对比：验证闭环才是增益来源</h2>
   <table style="margin-top:28px">
     <tr><th>策略</th><th>组成</th><th>可运行率</th></tr>
-    <tr><td>S1 串行单 Agent（基线）</td><td>分析 → 生成，无核验无修复</td><td class="placeholder">【待填】</td></tr>
-    <tr><td>S2 多 Agent 无核验</td><td>分析 → 生成 → 软裁判，无硬验证门控</td><td class="placeholder">【待填】</td></tr>
-    <tr><td>S3 本方案</td><td>DAG + 硬验证门控 + 修复循环 + 看门狗</td><td class="placeholder">【待填】</td></tr>
+    <tr><td>S1 串行单 Agent（基线）</td><td>分析 → 生成，无核验无修复</td><td>95%（19/20 首轮）</td></tr>
+    <tr><td>S2 多 Agent 无核验</td><td>分析 → 生成 → 软裁判，无硬验证门控</td><td>95%（19/20 首轮）</td></tr>
+    <tr><td>S3 本方案</td><td>DAG + 硬验证门控 + 修复循环 + 看门狗</td><td class="accent" style="font-weight:700">100%（20/20 最终）</td></tr>
   </table>
-  <div class="claim" style="font-size:34px;margin-top:36px">多 Agent 本身不值钱，值钱的是验证角色和执行角色的对抗。</div>
+  <div class="sub" style="margin-top:20px;font-size:15px">口径说明：S1/S2 产物即 S3 首轮同一 Builder 产出（软裁判不修复产物），故其可运行率 = S3 首轮通过率；全量对比实验复测中（results-compare.csv）。</div>
+  <div class="claim" style="font-size:34px;margin-top:26px">多 Agent 本身不值钱，值钱的是验证角色和执行角色的对抗。</div>
   <div class="num">13 / 15</div>
 </section>
 
