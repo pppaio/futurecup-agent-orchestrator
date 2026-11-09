@@ -66,13 +66,23 @@ export class Engine {
   private seq = 0;
   private watchdog = new LoopWatchdog();
   private runs = new Map<RunId, RunState>();
+  private subscribers = new Set<(e: RunEvent) => void>();
 
   constructor(private opts: EngineOptions) {}
+
+  /** 订阅实时事件（供 SSE 推送），返回取消订阅函数。 */
+  subscribe(cb: (e: RunEvent) => void): () => void {
+    this.subscribers.add(cb);
+    return () => {
+      this.subscribers.delete(cb);
+    };
+  }
 
   private emit(e: Omit<RunEvent, 'seq' | 'ts'>): void {
     const full: RunEvent = { seq: ++this.seq, ts: Date.now(), ...e };
     this.watchdog.onEvent(full);
     this.opts.store.append(full);
+    for (const cb of this.subscribers) cb(full);
   }
 
   /** 启动一次运行（后台执行），立即返回 runId。 */
@@ -321,6 +331,7 @@ export class Engine {
         const r = SoftReportSchema.safeParse(res.json);
         if (!r.success) throw new Error(`[schema] ${profile.id} 输出不合法: ${r.error.message}`);
         parsed = r.data;
+        this.emit({ run_id: runId, node_id: node.id, agent_id: profile.id, type: 'verify.soft.verdict', payload: r.data as unknown as Record<string, unknown> });
         break;
       }
       default:

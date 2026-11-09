@@ -7,15 +7,18 @@
   "scripts": {
     "demo:single": "tsx src/cli.ts demo:single",
     "demo:workflow": "tsx src/cli.ts demo:workflow",
+    "serve": "tsx src/server.ts",
     "bench": "tsx src/cli.ts bench",
     "replay": "tsx src/cli.ts replay",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "express": "^4.21.2",
     "playwright": "^1.49.0",
     "zod": "^3.23.8"
   },
   "devDependencies": {
+    "@types/express": "^4.17.21",
     "@types/node": "^22.10.0",
     "tsx": "^4.19.2",
     "typescript": "^5.7.2"
