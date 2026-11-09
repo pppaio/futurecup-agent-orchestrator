@@ -122,6 +122,7 @@ export type Ambiguity = z.infer<typeof AmbiguitySchema>;
 
 export const DecompositionSpecSchema = z.object({
   goal: z.string(),
+  graphic: z.boolean(),
   acceptance: z.array(z.string()),
   assumptions: z.array(z.string()).default([]),
   ambiguities: z.array(AmbiguitySchema).default([]),

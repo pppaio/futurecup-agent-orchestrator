@@ -38,6 +38,7 @@ function fakeHandlers(builderOutput: string, fixerOutput: string) {
     analyst: () =>
       JSON.stringify({
         goal: '可玩的打砖块',
+        graphic: true,
         acceptance: ['页面加载无 console 报错', 'canvas 有非空像素', '球拍可左右控制且球与砖块碰撞'],
         assumptions: ['单人、无存档'],
         ambiguities: [],

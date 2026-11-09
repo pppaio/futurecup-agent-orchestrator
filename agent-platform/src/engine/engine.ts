@@ -196,14 +196,11 @@ export class Engine {
       }
 
       if (st.node.type === 'verify') {
-        const report = result.output as HardReport;
-        if (!report.ok) {
-          rs.ports['error_cards'] = normalizeErrors(report);
-          const art = rs.ports['artifact'] as { html?: string } | undefined;
-          rs.ports['artifact_summary'] = summarizeArtifact(art?.html ?? '');
+        const report = result.output as Partial<HardReport>;
+        if (Array.isArray(report.errors)) {
+          rs.errorCurve.push(report.errors.length);
+          if (report.ok) rs.verifyPassed = true;
         }
-        rs.errorCurve.push(report.errors.length);
-        if (report.ok) rs.verifyPassed = true;
       }
 
       this.emit({ run_id: rs.runId, node_id: nodeId, type: 'node.exited', payload: { pass: result.pass } });
@@ -345,13 +342,20 @@ export class Engine {
     const artifact = inputs.artifact as { html?: string } | string | undefined;
     const html = typeof artifact === 'string' ? artifact : artifact?.html ?? '';
     if (!html) throw new Error('验证节点缺少 html 输入');
+    const spec = inputs.spec as { graphic?: boolean } | undefined;
+    const requireCanvas = spec?.graphic ?? true;
 
     const shotsDir = join(runDir, 'shots');
-    const report: HardReport = await this.opts.sandbox.run(html, { timeoutMs: 15000, shotsDir });
+    const report: HardReport = await this.opts.sandbox.run(html, { timeoutMs: 15000, shotsDir, requireCanvas });
 
     writeFileSync(join(runDir, 'hard_report.json'), JSON.stringify(report, null, 2), 'utf8');
     this.emit({ run_id: runId, node_id: node.id, type: 'verify.hard.result', payload: report as unknown as Record<string, unknown> });
 
+    // 失败时把信号失败也压成错误卡片（修复者需要可操作信息）
+    if (!report.ok) {
+      ports['error_cards'] = normalizeErrors(report, { requireCanvas });
+      ports['artifact_summary'] = summarizeArtifact(html);
+    }
     return { pass: report.ok, output: report };
   }
 

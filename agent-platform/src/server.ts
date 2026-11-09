@@ -30,6 +30,7 @@ if (key) {
     analyst: () =>
       JSON.stringify({
         goal: '可玩的打砖块',
+        graphic: true,
         acceptance: ['页面加载无 console 报错', 'canvas 渲染非空', '球拍可控制'],
         assumptions: ['单人、无存档'],
         ambiguities: [],

@@ -6,6 +6,8 @@ import type { HardReport } from '../types.js';
 export interface SandboxOpts {
   timeoutMs: number;
   shotsDir?: string;
+  /** 图形类需求才要求 canvas 非空；工具类要求 DOM 有实际内容。 */
+  requireCanvas?: boolean;
   /** 可选交互脚本：模拟按键/点击，用于断言验收条件。 */
   interaction?: (page: Page) => Promise<void>;
 }
@@ -92,8 +94,10 @@ export class PlaywrightSandbox implements Sandbox {
     }
 
     await browser.close();
-    // 注：canvas 要求将在 M2 按 Analyst 的 acceptance 声明（图形类）改为条件式
-    const ok = load_ok && errors.length === 0 && canvas_nonempty && interactionOk;
+    // 图形类：canvas 非空；工具类：DOM 有实际内容（节点数阈值）
+    const requireCanvas = opts.requireCanvas ?? true;
+    const dom_ok = requireCanvas ? canvas_nonempty : dom_node_count >= 12;
+    const ok = load_ok && errors.length === 0 && dom_ok && interactionOk;
     return { ok, load_ok, errors, signals: { canvas_nonempty, dom_node_count }, screenshots, load_ms };
   }
 }
