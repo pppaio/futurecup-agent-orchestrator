@@ -223,11 +223,11 @@
   <h2>三策略对比：验证闭环才是增益来源</h2>
   <table style="margin-top:28px">
     <tr><th>策略</th><th>组成</th><th>可运行率</th></tr>
-    <tr><td>S1 串行单 Agent（基线）</td><td>分析 → 生成，无核验无修复</td><td>95%（19/20 首轮）</td></tr>
-    <tr><td>S2 多 Agent 无核验</td><td>分析 → 生成 → 软裁判，无硬验证门控</td><td>95%（19/20 首轮）</td></tr>
-    <tr><td>S3 本方案</td><td>DAG + 硬验证门控 + 修复循环 + 看门狗</td><td class="accent" style="font-weight:700">100%（20/20 最终）</td></tr>
+    <tr><td>S1 串行单 Agent（基线）</td><td>分析 → 生成，无核验无修复</td><td>85%（17/20）</td></tr>
+    <tr><td>S2 多 Agent 无核验</td><td>分析 → 生成 → 软裁判，无硬验证门控</td><td>90%（18/20）</td></tr>
+    <tr><td>S3 本方案</td><td>DAG + 硬验证门控 + 修复循环 + 看门狗</td><td class="accent" style="font-weight:700">100%（20/20）</td></tr>
   </table>
-  <div class="sub" style="margin-top:20px;font-size:15px">口径说明：S1/S2 产物即 S3 首轮同一 Builder 产出（软裁判不修复产物），故其可运行率 = S3 首轮通过率；全量对比实验复测中（results-compare.csv）。</div>
+  <div class="sub" style="margin-top:20px;font-size:15px">同一 20 样本、同一 L1 硬验证口径实测（2026-11-09，真实 v4-pro）。软裁判只提 5 个点；硬验证 + 修复闭环提 15 个点。</div>
   <div class="claim" style="font-size:34px;margin-top:26px">多 Agent 本身不值钱，值钱的是验证角色和执行角色的对抗。</div>
   <div class="num">13 / 15</div>
 </section>
