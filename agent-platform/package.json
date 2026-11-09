@@ -1,0 +1,26 @@
+{
+  "name": "agent-platform",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "未来杯创新大赛·赛题一：多智能体编排调度平台",
+  "scripts": {
+    "demo:single": "tsx src/cli.ts demo:single",
+    "demo:workflow": "tsx src/cli.ts demo:workflow",
+    "bench": "tsx src/cli.ts bench",
+    "replay": "tsx src/cli.ts replay",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "playwright": "^1.49.0",
+    "zod": "^3.23.8"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.2"
+  },
+  "allowScripts": {
+    "esbuild@0.28.2": true
+  }
+}

@@ -1,0 +1,7 @@
+node_modules/
+runs/
+.env
+dist/
+*.log
+.DS_Store
+ppt_text.txt
