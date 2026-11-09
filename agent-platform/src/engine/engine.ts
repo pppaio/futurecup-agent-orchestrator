@@ -264,6 +264,30 @@ export class Engine {
     }
 
     const hasVerify = rs.wf.nodes.some((n) => n.type === 'verify');
+    const finalStatus = hasVerify && !rs.verifyPassed ? 'failed' : 'done';
+
+    // 可复现三件套：run.json（模型快照 + 曲线 + 耗时）
+    const agentIds = [...new Set([...rs.states.values()].map((s) => s.node.agent).filter((a): a is string => !!a))];
+    writeFileSync(
+      join(rs.runDir, 'run.json'),
+      JSON.stringify(
+        {
+          run_id: rs.runId,
+          workflow_id: rs.wf.id,
+          status: finalStatus,
+          model_snapshot: agentIds.map((a) => ({
+            agent_id: a,
+            model: this.opts.agents.get(a)?.model.name ?? 'unknown',
+          })),
+          error_curve: rs.errorCurve,
+          wall_ms: Date.now() - rs.startedAt,
+        },
+        null,
+        2,
+      ),
+      'utf8',
+    );
+
     if (hasVerify && !rs.verifyPassed) {
       this.emit({
         run_id: rs.runId,

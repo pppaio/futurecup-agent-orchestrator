@@ -20,12 +20,20 @@ cp .env.example .env              # 填入 DEEPSEEK_API_KEY=sk-...
 ## 运行
 
 ```bash
+npm run serve            # 启动完整应用（前端+后端，单端口 :3000）
 npm run demo:single      # M1 最小环：生成 → 硬验证
 npm run demo:workflow    # M2 全链路：分析→生成(坏)→验证失败→回灌修复→再验证→打包
 npm run demo:stall       # Loop Watchdog 抓"假进展"并升级中止
 npm run demo:interrupt   # M3 运行中中断 → 插入指令 → 断点续跑
+npm run demo:gate        # §5.8 歧义停机：阻塞性歧义 → 自动暂停 → 人工回答 → 续跑
+npm run demo:real        # 真实 v4-pro 单次全链路
 npm run bench            # 20 样本批量实验（输出 runs/results.csv）
-npm run compare          # 三策略对比 S1/S2/S3（输出 runs/results-compare.csv）
+npm run compare          # 三策略对比 S1/S2/S3（输出 runs/results-compare.csv，COMPARE_LIMIT 控子集）
+npm run summary          # 汇总实验指标（可运行率/轮次/p50-p95/成本）
+npm run charts           # 生成 4 张实验图表（runs/charts/*.png）
+npm run replay -- <runId>  # 事件流重放（可复现证据）
+npm run export:doc       # 导出方案书 PDF（docs/方案书.pdf）
+npm run export:ppt       # 导出讲解 PPT PDF（docs/讲解PPT.pdf）
 npm run typecheck        # TS 类型检查
 ```
 
@@ -45,7 +53,7 @@ npm run typecheck        # TS 类型检查
 - **控制面确定性**：节点跳转只由 WorkflowDef + 状态机决定，禁止 LLM 决定"下一步谁执行"；错误归约/摘要用确定性代码，禁用 LLM。
 - **两级判定**（Fast/Slow Path）：硬验证（Playwright 沙箱，非 LLM）判定"能不能跑"；软裁判（LLM）只评价"好不好"，不阻断交付。
 - **Self-Loop 四道闸**：轮次上限 3 + 错误数连续两轮不降即升级 + 错误卡片重复即升级 + 修复者输出指纹去重即中止，超限带缺陷交付。
-- **可中断可复现**：运行中可中断、插入指令、断点续跑；每次运行落盘 `run.json`（模型快照/seed/产物 sha256）+ `events.jsonl`。
+- **可中断可复现**：运行中可中断、插入指令、断点续跑；每次运行落盘 `run.json`（模型快照/错误曲线/耗时）+ `events.jsonl`（事件流）+ `hard_report.json`（硬验证）+ `bundle.html`（产物，sha256 记入事件流）；`replay` 命令可完整重放。
 
 ## 目录结构
 
