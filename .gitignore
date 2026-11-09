@@ -5,3 +5,4 @@ dist/
 *.log
 .DS_Store
 ppt_text.txt
+.dsh-vision-router/
