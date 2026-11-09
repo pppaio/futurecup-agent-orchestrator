@@ -52,6 +52,10 @@ const engine = new Engine({
 const app = express();
 app.use(express.json({ limit: '2mb' }));
 
+// 静态托管前端构建产物：整个应用只跑在 :3000 一个端口
+const webDist = join(process.cwd(), 'web', 'dist');
+app.use(express.static(webDist));
+
 const PORT = Number(process.env.PORT ?? 3000);
 const runsOrder: string[] = [];
 
