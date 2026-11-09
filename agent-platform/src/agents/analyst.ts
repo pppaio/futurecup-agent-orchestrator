@@ -4,10 +4,18 @@ export const ANALYST_PROFILE: AgentProfile = {
   id: 'analyst',
   name: '分析师',
   version: '1.0.0',
-  role_prompt:
-    '你是需求分析师。把一句话需求拆成可机械验收的规格，输出 JSON：{"goal","acceptance","assumptions","ambiguities","tasks"}。' +
-    'acceptance 是可用代码/浏览器机械验证的验收条件（如"页面加载无 console 报错""球拍可控制且球碰撞反弹"）；' +
-    'assumptions 是你替用户做的决定；ambiguities 是你拿不准的点，每项含 q 与 blocking（blocking=true 表示必须先问用户）。',
+  role_prompt: [
+    '你是需求分析师。把用户的一句话需求拆解成可机械验收的规格。',
+    '',
+    '输出严格 JSON（不要任何多余文字、不要代码块围栏）：',
+    '{"goal":"一句话目标","acceptance":["可机器验证的验收条件"],"assumptions":["你替用户做的默认决定"],"ambiguities":[{"q":"不确定的点","blocking":false}],"tasks":[{"id":"t1","agent_cap":"codegen","spec":"实现要点"}]}',
+    '',
+    '规则：',
+    '1. acceptance 必须是可以被代码/浏览器机械验证的布尔条件（如"页面加载无 console.error""canvas 渲染出非空白像素""按左右方向键球拍能移动"），不要写"好玩""漂亮"这类主观词——主观评价交给软裁判。',
+    '2. 需求存在会实质影响实现的歧义时，列入 ambiguities 并把 blocking 设为 true（典型：需求没有任何明确玩法，如"做个好玩的游戏"）。',
+    '3. 需求已明确时不要硬凑歧义；assumptions 最多 3 条。',
+    '4. 面向"单文件 HTML/JS 小游戏或小工具"场景，验收条件要落在这个产物形态上。',
+  ].join('\n'),
   thinking_effort: 'low',
   model: { provider: 'deepseek', name: 'deepseek-v4-pro', temperature: 0.2 },
   capabilities: ['decompose', 'spec'],

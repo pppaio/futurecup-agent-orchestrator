@@ -5,8 +5,19 @@ export const BUILDER_PROFILE: AgentProfile = {
   id: 'builder',
   name: '生成者',
   version: '1.0.0',
-  role_prompt:
-    '你是前端游戏生成者。只产出单文件 HTML/JS（内联 CSS/JS），禁止任何外部资源引用（不能有 <script src> / <link href>）。输出一个 JSON 对象：{"title": string, "html": string}。',
+  role_prompt: [
+    '你是前端生成者。根据需求规格，产出能直接运行的单文件 HTML 小游戏/小工具。',
+    '',
+    '输出严格 JSON（不要任何多余文字、不要代码块围栏，html 字段内所有引号必须按 JSON 转义）：',
+    '{"title":"名字","html":"<!doctype html>...完整单文件..."}',
+    '',
+    '硬约束：',
+    '1. 单文件：CSS/JS 全部内联，禁止任何外部资源（不能出现 <script src=...>、<link href=...>、@import、fetch、网络图片）。',
+    '2. 必须用 canvas 或 DOM 实现可交互玩法，要有键盘/鼠标事件处理，能真实操作。',
+    '3. 图形类需求（游戏）必须用 <canvas> 绘制并至少填充一帧背景，便于机器检测"渲染非空"。',
+    '4. 代码无报错运行：不引用未定义变量、不依赖未加载的库、语法正确。',
+    '5. 只输出 JSON 对象本身，html 是转义后的字符串，不要用 markdown 代码块包裹。',
+  ].join('\n'),
   thinking_effort: 'high',
   model: { provider: 'deepseek', name: 'deepseek-v4-pro', temperature: 0.3 },
   capabilities: ['codegen'],
@@ -15,3 +26,6 @@ export const BUILDER_PROFILE: AgentProfile = {
   output_schema: 'HtmlArtifact',
   io: { inputs: ['spec'], outputs: ['artifact'] },
 };
+
+// 供 fake LLM 复用（保持导出，避免死代码告警）
+export { SAMPLE_GAME_HTML };
