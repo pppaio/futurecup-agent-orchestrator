@@ -93,7 +93,7 @@
 | 角色 | 输入 → 输出 | 关键要求 |
 |---|---|---|
 | analyst 分析师 | requirement → DecompositionSpec | 必须输出 assumptions[] + ambiguities[]；blocking=true 的歧义数 > 0 时暂停转人工 |
-| builder 生成者 | spec → HtmlArtifact | 只产出单文件 HTML，禁止外部资源引用（<script src>/<link href> 一律禁） |
+| builder 生成者 | spec → HtmlArtifact | 只产出单文件 HTML，禁止外部资源引用（`<script src>` / `<link href>` 一律禁） |
 | hard-sandbox 硬校验器 | artifact → HardReport | **不是 LLM**，是 Playwright 脚本 |
 | critic 软裁判 | artifact + acceptance → SoftReport | 打 1-5 分 + 指出偏差；**不阻断流程**，只作提示与人工介入的触发信号 |
 | fixer 修复者 | spec + 错误卡片 + 上一版摘要 → 新版 | **只喂错误卡片（≤3 张）+ 需求摘要，不喂全文**，避免「防御性妥协」式假修复 |
@@ -216,11 +216,17 @@ ok = load_ok && errors.length === 0 && canvas_nonempty && interactionScript 未�
 
 **当前实现状态**：M1~M5 已完成并全部经真实 v4-pro 验证——事件流 + 引擎骨架 + 沙箱（M1）、五角色 + DAG + 硬验证门控 + Fixer 循环 + Loop Watchdog + 错误归一化（M2）、中断/插入/续跑 + §5.8 歧义停机 + 三页前端 + REST/SSE 后端（M3）、打包器（M4）、20 样本批量实验与图表（M5）。三策略对比实验运行中；RAG/MCP 为 roadmap（见 8.2）。
 
-**系统截图**：
-- 前端任务台：`runs/ui-landing.png`（已生成）
-- 运行看板 / 核验报告页：【待补，演示录屏时截取】
-- 硬验证报告 + 产物截图：任意 run 目录下 `hard_report.json` + `shots/first.png`
-- 实验图表：`runs/charts/1-runnable-rate.png`、`2-category-rate.png`、`3-latency.png`、`4-convergence.png`（已生成）
+**系统截图**（真实 v4-pro 运行）：
+
+![前端任务台](../agent-platform/runs/ui-landing.png)
+
+![运行看板（真实运行中：节点点亮 + 事件流）](../agent-platform/runs/ui-3-dashboard-live.png)
+
+![核验报告（收敛曲线 + 硬验证 + 软评分 + 耗时）](../agent-platform/runs/ui-4-report.png)
+
+![实验图表：一次可运行率](../agent-platform/runs/charts/1-runnable-rate.png)
+
+> 更多材料：每个 run 目录含 `hard_report.json` + `shots/*.png` + `bundle.html`；其余实验图表见 `agent-platform/runs/charts/`。
 
 ---
 

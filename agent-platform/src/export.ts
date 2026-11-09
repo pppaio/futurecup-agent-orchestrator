@@ -1,11 +1,24 @@
-import { readFileSync, mkdirSync } from 'node:fs';
+import { readFileSync, mkdirSync, writeFileSync } from 'node:fs';
+import { resolve, dirname } from 'node:path';
 import { marked } from 'marked';
 import { chromium } from 'playwright';
 
-/** 方案书 markdown → PDF */
+/** 方案书 markdown → PDF（图片按 md 所在目录解析为 file:// 绝对路径） */
 export async function exportDoc(mdPath: string, outPath: string): Promise<void> {
   const md = readFileSync(mdPath, 'utf8');
-  const body = marked.parse(md);
+  const mdDir = dirname(resolve(mdPath));
+  const body = (await marked.parse(md)).replace(/<img src="([^"]+)"/g, (_m, src: string) => {
+    if (/^(https?:|data:)/.test(src)) return `<img src="${src}"`;
+    const p = resolve(mdDir, src);
+    try {
+      const buf = readFileSync(p);
+      const ext = (p.split('.').pop() ?? 'png').toLowerCase();
+      const mime = ext === 'jpg' || ext === 'jpeg' ? 'image/jpeg' : ext === 'gif' ? 'image/gif' : ext === 'webp' ? 'image/webp' : 'image/png';
+      return `<img src="data:${mime};base64,${buf.toString('base64')}"`;
+    } catch {
+      return `<img src="${src}"`;
+    }
+  });
   const html = `<!doctype html><html><head><meta charset="utf-8">
   <style>
     body { font-family: "Microsoft YaHei", "PingFang SC", sans-serif; max-width: 860px; margin: 0 auto; padding: 36px; color: #1f2937; line-height: 1.75; font-size: 14px; }
@@ -36,10 +49,15 @@ export async function exportPpt(htmlPath: string, outPath: string): Promise<void
   await htmlToPdf(withPage, outPath, undefined);
 }
 
+/** 渲染 HTML → PDF：写入临时文件后 goto(file://) 以正常加载本地图片。 */
 async function htmlToPdf(html: string, outPath: string, format: 'A4' | undefined): Promise<void> {
+  mkdirSync('dist', { recursive: true });
+  const tmp = resolve('dist', '_export.html');
+  writeFileSync(tmp, html, 'utf8');
   const browser = await chromium.launch({ headless: true });
   const page = await browser.newPage();
-  await page.setContent(html, { waitUntil: 'load' });
+  await page.goto('file:///' + tmp.replace(/\\/g, '/'), { waitUntil: 'load' });
+  await page.waitForTimeout(800); // 等图片加载
   if (format) {
     await page.pdf({
       path: outPath,
@@ -55,7 +73,6 @@ async function htmlToPdf(html: string, outPath: string, format: 'A4' | undefined
 }
 
 const cmd = process.argv[2];
-mkdirSync('dist', { recursive: true });
 if (cmd === 'doc') {
   const src = process.argv[3] ?? '../docs/04-方案书-draft.md';
   await exportDoc(src, '../docs/方案书.pdf');
