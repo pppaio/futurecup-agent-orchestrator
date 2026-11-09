@@ -204,7 +204,7 @@ ok = load_ok && errors.length === 0 && canvas_nonempty && interactionScript 未�
 |---|---|---|
 | `types.ts` | 全量数据契约 | zod 定义 AgentProfile / WorkflowDef / Event / HardReport / DecompositionSpec / SoftReport / ErrorCard / RunRecord |
 | `event/store.ts` | 事件存储 | append-only JSONL 追加写 + replay 重放，一行一条事件 |
-| `engine/engine.ts` | 编排引擎 Core | OR 激活调度、loop 边计数 + 全局兜底、schema 强校验、错误归一化、中断/续跑、后台 runLoop + wait/interrupt/resume |
+| `engine/engine.ts` | 编排引擎 Core | 并发 Worker 调度（就绪节点批量并行，上限 max_concurrency）、节点级超时熔断（10 分钟无完成判失败）、loop 边计数 + 全局兜底、schema 强校验、错误归一化、中断/续跑、后台 runLoop + wait/interrupt/resume |
 | `engine/watchdog.ts` | Loop Watchdog | 四条收敛判据，外部只读观察者，返回 continue/escalate/abort |
 | `sandbox/sandbox.ts` | 硬验证沙箱 | Playwright 无头，捕获 pageerror/console，先截图强制合成帧再轮询 canvas 非空，交互脚本 |
 | `gateway/llm.ts` | LLM 网关 | 统一接口 + FakeLLM（跑全链路）+ DeepSeekLLM（OpenAI 兼容，思考强度 low/medium/high → low/high/max，JSON 模式） |
@@ -298,6 +298,14 @@ ok = load_ok && errors.length === 0 && canvas_nonempty && interactionScript 未�
 | Loop Watchdog | **否** | 只读事件流的外部观察者 |
 
 **这一张表本身就是「AI 使用充分性与合理性」的最好回答**：我们让 LLM 深度融入生成与语义评价的主干环节，同时用确定性代码守住「判定能否运行」「控制流」「错误归约」这三条不可交给模型的底线。
+
+### 8.0 三条工程原则（架构的"宪法"）
+
+工程实现遵循三条硬原则，答辩可直接引用：
+
+1. **事件驱动**：后台任务（LLM 调用 / 沙箱执行）完成或抛错即发出事件，事件流是唯一的唤醒信号——主循环不做定时轮询；`engine.subscribe` + SSE 把同一份事件推给前端与观察者。
+2. **超时熔断**：单节点超过 10 分钟未完成 → 强制判失败（`Promise.race` 熔断 + LLM 网关侧 `AbortController` 双保险，后者同时掐断在途请求停止烧 token），失败走 `when:fail` 分支打回重做或跳过。
+3. **状态剥离**：耗时任务（如 Builder 深度思考）交给节点 Worker 并发执行，主循环（Router 层）只做调度与边传播，一次取出至多 `max_concurrency` 个就绪节点并行跑，不阻塞在单个长任务上。
 
 ### 8.2 RAG / MCP 的现状与定位
 

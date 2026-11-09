@@ -188,77 +188,60 @@ export class Engine {
         return;
       }
 
-      const nodeId = rs.queue.shift()!;
-      const st = rs.states.get(nodeId)!;
-      st.runs++;
-      this.emit({ run_id: rs.runId, node_id: nodeId, type: 'node.entered', payload: { run: st.runs } });
+      // R3 状态剥离：一次取出至多 max_concurrency 个就绪节点，交给并发 Worker 执行，
+      // 主循环不等单个节点，只等一批的结果（事件驱动：节点完成即返回，不是轮询）。
+      const batch: string[] = [];
+      const cap = Math.max(1, rs.wf.limits.max_concurrency);
+      while (rs.queue.length > 0 && batch.length < cap) batch.push(rs.queue.shift()!);
 
-      let result: NodeResult;
-      try {
-        result = await this.executeNode(st.node, rs.ports, rs.runId, rs.runDir, rs.task);
-      } catch (err) {
-        this.emit({ run_id: rs.runId, node_id: nodeId, type: 'error', payload: { message: String(err) } });
-        result = { pass: false, output: { error: String(err) } };
-      }
-      st.output = result.output;
+      const done = await Promise.all(batch.map((nodeId) => this.runOneNode(rs, nodeId)));
 
-      const outObj = (result.output && typeof result.output === 'object' ? result.output : {}) as Record<string, unknown>;
-      for (const name of st.node.outputs ?? []) {
-        rs.ports[name] = name in outObj ? outObj[name] : outObj;
-      }
+      // 一批完成后统一传播边（单线程内按完成顺序处理，避免并发写队列竞态）
+      for (const { nodeId, result } of done) {
+        const st = rs.states.get(nodeId)!;
+        rs.wf.edges.forEach((e, idx) => {
+          if (e.from !== nodeId) return;
+          const edgeOk = e.when === 'always' || (e.when === 'pass' ? result.pass : !result.pass);
+          if (!edgeOk) return;
 
-      if (st.node.type === 'verify') {
-        const report = result.output as Partial<HardReport>;
-        if (Array.isArray(report.errors)) {
-          rs.errorCurve.push(report.errors.length);
-          if (report.ok) rs.verifyPassed = true;
-        }
-      }
-
-      this.emit({ run_id: rs.runId, node_id: nodeId, type: 'node.exited', payload: { pass: result.pass } });
-
-      rs.wf.edges.forEach((e, idx) => {
-        if (e.from !== nodeId) return;
-        const edgeOk = e.when === 'always' || (e.when === 'pass' ? result.pass : !result.pass);
-        if (!edgeOk) return;
-
-        if (e.loop) {
-          rs.totalLoopIters++;
-          if (rs.totalLoopIters > rs.wf.limits.max_total_iters) {
-            this.emit({ run_id: rs.runId, node_id: e.to, type: 'error', payload: { message: 'max_total_iters exceeded' } });
-            return;
+          if (e.loop) {
+            rs.totalLoopIters++;
+            if (rs.totalLoopIters > rs.wf.limits.max_total_iters) {
+              this.emit({ run_id: rs.runId, node_id: e.to, type: 'error', payload: { message: 'max_total_iters exceeded' } });
+              return;
+            }
+            const verdict = this.watchdog.verdict();
+            if (verdict.action !== 'continue') {
+              this.emit({ run_id: rs.runId, node_id: e.to, type: 'error', payload: { message: `watchdog ${verdict.action}: ${verdict.reason}` } });
+              return;
+            }
+            const c = (rs.loopCounts.get(idx) ?? 0) + 1;
+            rs.loopCounts.set(idx, c);
+            this.emit({ run_id: rs.runId, node_id: e.to, type: 'loop.iteration', payload: { iteration: c, max: e.loop.max_iters } });
+            if (c > e.loop.max_iters) {
+              this.emit({ run_id: rs.runId, node_id: e.to, type: 'loop.iteration', payload: { exceeded: true } });
+              return;
+            }
+            rs.queue.push(e.to);
+          } else {
+            rs.queue.push(e.to);
           }
-          const verdict = this.watchdog.verdict();
-          if (verdict.action !== 'continue') {
-            this.emit({ run_id: rs.runId, node_id: e.to, type: 'error', payload: { message: `watchdog ${verdict.action}: ${verdict.reason}` } });
-            return;
-          }
-          const c = (rs.loopCounts.get(idx) ?? 0) + 1;
-          rs.loopCounts.set(idx, c);
-          this.emit({ run_id: rs.runId, node_id: e.to, type: 'loop.iteration', payload: { iteration: c, max: e.loop.max_iters } });
-          if (c > e.loop.max_iters) {
-            this.emit({ run_id: rs.runId, node_id: e.to, type: 'loop.iteration', payload: { exceeded: true } });
-            return;
-          }
-          rs.queue.push(e.to);
-        } else {
-          rs.queue.push(e.to);
-        }
-      });
+        });
 
-      // §5.8：分析师产出阻塞性歧义 → 自动暂停转人工（下一节点运行前生效；批量实验可关）
-      if (
-        this.opts.humanGate !== false &&
-        st.node.type === 'agent' &&
-        st.node.agent === 'analyst' &&
-        result.output &&
-        typeof result.output === 'object'
-      ) {
-        const spec = result.output as { ambiguities?: { q: string; blocking: boolean }[] };
-        const blocking = (spec.ambiguities ?? []).filter((a) => a.blocking);
-        if (blocking.length > 0) {
-          rs.pendingHumanPrompt = blocking.map((b) => '· ' + b.q).join('\n');
-          rs.interruptRequested = true;
+        // §5.8：分析师产出阻塞性歧义 → 自动暂停转人工（下一批运行前生效；批量实验可关）
+        if (
+          this.opts.humanGate !== false &&
+          st.node.type === 'agent' &&
+          st.node.agent === 'analyst' &&
+          result.output &&
+          typeof result.output === 'object'
+        ) {
+          const spec = result.output as { ambiguities?: { q: string; blocking: boolean }[] };
+          const blocking = (spec.ambiguities ?? []).filter((a) => a.blocking);
+          if (blocking.length > 0) {
+            rs.pendingHumanPrompt = blocking.map((b) => '· ' + b.q).join('\n');
+            rs.interruptRequested = true;
+          }
         }
       }
     }
@@ -309,6 +292,53 @@ export class Engine {
     const inputs: Record<string, unknown> = {};
     for (const name of node.inputs ?? []) inputs[name] = ports[name];
     return inputs;
+  }
+
+  /**
+   * 单节点 Worker：执行与主循环解耦（R3 状态剥离）。
+   * R2 超时熔断：节点超过 10 分钟未完成 → 强制判失败（走 when:fail 分支打回/跳过）。
+   */
+  private async runOneNode(rs: RunState, nodeId: string): Promise<{ nodeId: string; result: NodeResult }> {
+    const st = rs.states.get(nodeId)!;
+    st.runs++;
+    this.emit({ run_id: rs.runId, node_id: nodeId, type: 'node.entered', payload: { run: st.runs } });
+
+    const NODE_TIMEOUT_MS = 600_000; // 10 分钟无输出 → 熔断
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    let result: NodeResult;
+    try {
+      result = await Promise.race([
+        this.executeNode(st.node, rs.ports, rs.runId, rs.runDir, rs.task),
+        new Promise<NodeResult>((_, reject) => {
+          timer = setTimeout(
+            () => reject(new Error(`节点 ${nodeId} 超过 10 分钟未完成，熔断判失败`)),
+            NODE_TIMEOUT_MS,
+          );
+        }),
+      ]);
+    } catch (err) {
+      this.emit({ run_id: rs.runId, node_id: nodeId, type: 'error', payload: { message: String(err) } });
+      result = { pass: false, output: { error: String(err) } };
+    } finally {
+      if (timer) clearTimeout(timer);
+    }
+
+    st.output = result.output;
+    const outObj = (result.output && typeof result.output === 'object' ? result.output : {}) as Record<string, unknown>;
+    for (const name of st.node.outputs ?? []) {
+      rs.ports[name] = name in outObj ? outObj[name] : outObj;
+    }
+
+    if (st.node.type === 'verify') {
+      const report = result.output as Partial<HardReport>;
+      if (Array.isArray(report.errors)) {
+        rs.errorCurve.push(report.errors.length);
+        if (report.ok) rs.verifyPassed = true;
+      }
+    }
+
+    this.emit({ run_id: rs.runId, node_id: nodeId, type: 'node.exited', payload: { pass: result.pass } });
+    return { nodeId, result };
   }
 
   private async executeNode(

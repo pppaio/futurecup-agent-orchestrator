@@ -77,15 +77,26 @@ export class DeepSeekLLM implements LLMGateway {
       body.response_format = { type: 'json_object' };
     }
 
-    const res = await fetch(`${this.baseUrl}/chat/completions`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${this.apiKey}`,
-      },
-      body: JSON.stringify(body),
-    });
+    // R2 超时熔断：单次调用 10 分钟无响应 → Abort（与引擎侧节点级熔断双保险）
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 600_000);
+    try {
+      const res = await fetch(`${this.baseUrl}/chat/completions`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${this.apiKey}`,
+        },
+        body: JSON.stringify(body),
+        signal: controller.signal,
+      });
+      return await this.handleResponse(res, opts);
+    } finally {
+      clearTimeout(timer);
+    }
+  }
 
+  private async handleResponse(res: Response, opts: { agent: AgentProfile; json?: boolean }): Promise<LLMResult> {
     if (!res.ok) {
       const errText = await res.text().catch(() => '');
       throw new Error(`DeepSeek API ${res.status}: ${errText.slice(0, 500)}`);
