@@ -38,6 +38,19 @@ function extractBuilderHtml(events: RunEvent[]): string | null {
   }
 }
 
+/** 从事后度量用：从 analyst 的 assistant 事件里提取规格（含 graphic 声明）。 */
+function extractAnalystSpec(events: RunEvent[]): { graphic?: boolean } | null {
+  const msg = events.find(
+    (e) => e.type === 'agent.message' && e.agent_id === 'analyst' && (e.payload as { role?: string }).role === 'assistant',
+  );
+  if (!msg) return null;
+  try {
+    return JSON.parse((msg.payload as { text: string }).text) as { graphic?: boolean };
+  } catch {
+    return null;
+  }
+}
+
 /** 三策略对比：同一批样本、同一"能否通过 L1 硬验证"的口径。limit 用于控成本/时间的子集实验。 */
 export async function runCompare(llm: LLMGateway, limit = DATASET.length): Promise<StrategyRow[]> {
   const store = new EventStore('runs');
@@ -69,10 +82,11 @@ export async function runCompare(llm: LLMGateway, limit = DATASET.length): Promi
         totalFirstErrors += (verifyEvents[0].payload as unknown as HardReport).errors.length;
         verifyCount++;
       } else {
-        // S1/S2：无核验，事后用同一沙箱度量"能不能跑"
+        // S1/S2：无核验，事后用同一沙箱度量"能不能跑"（按规格 graphic 选择判定）
         const html = extractBuilderHtml(events);
         if (html) {
-          const report = await sandbox.run(html, { timeoutMs: 15000 });
+          const spec = extractAnalystSpec(events);
+          const report = await sandbox.run(html, { timeoutMs: 15000, requireCanvas: spec?.graphic ?? true });
           ok = report.ok;
           totalFirstErrors += report.errors.length;
           verifyCount++;
