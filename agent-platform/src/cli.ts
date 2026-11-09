@@ -5,6 +5,7 @@ import type { LLMGateway } from './gateway/llm.js';
 import { runBench, writeCsv } from './bench/runner.js';
 import { runCompare, writeCompareCsv } from './bench/compare.js';
 import { renderCharts } from './bench/charts.js';
+import { summarizeCsv } from './bench/summary.js';
 import { PlaywrightSandbox } from './sandbox/sandbox.js';
 import { SingleHtmlPackager } from './packager/packager.js';
 import { Engine } from './engine/engine.js';
@@ -233,6 +234,10 @@ async function charts(): Promise<void> {
   for (const p of out) console.log('  ' + p);
 }
 
+async function summary(): Promise<void> {
+  console.log(summarizeCsv('runs/results.csv'));
+}
+
 async function main(): Promise<void> {
   mkdirSync('runs', { recursive: true });
   const cmd = process.argv[2] ?? 'demo:single';
@@ -260,6 +265,9 @@ async function main(): Promise<void> {
       break;
     case 'charts':
       await charts();
+      break;
+    case 'summary':
+      await summary();
       break;
     case 'replay':
       console.log(`命令 ${cmd} 将在后续里程碑实现`);
