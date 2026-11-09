@@ -3,6 +3,7 @@ import { EventStore } from './event/store.js';
 import { FakeLLM, DeepSeekLLM } from './gateway/llm.js';
 import type { LLMGateway } from './gateway/llm.js';
 import { runBench, writeCsv } from './bench/runner.js';
+import { runCompare, writeCompareCsv } from './bench/compare.js';
 import { PlaywrightSandbox } from './sandbox/sandbox.js';
 import { SingleHtmlPackager } from './packager/packager.js';
 import { Engine } from './engine/engine.js';
@@ -173,6 +174,58 @@ async function demoInterrupt(): Promise<void> {
   if (!allOk) process.exitCode = 1;
 }
 
+async function demoReal(): Promise<void> {
+  const key = process.env.DEEPSEEK_API_KEY;
+  if (!key) {
+    console.log('未配置 DEEPSEEK_API_KEY（agent-platform/.env）');
+    process.exitCode = 1;
+    return;
+  }
+  const store = new EventStore('runs');
+  const engine = new Engine({
+    llm: new DeepSeekLLM(key),
+    sandbox: new PlaywrightSandbox(),
+    packager: new SingleHtmlPackager(),
+    store,
+    agents: ALL_AGENTS,
+  });
+  console.log('[demo:real] 真实 v4-pro 全链路：做个能玩的打砖块');
+  const t0 = Date.now();
+  const runId = engine.start(GAME_GEN_WF, { requirement: '做个能玩的打砖块' });
+  await engine.wait(runId);
+  const events = store.replay(runId);
+  summarize(events);
+  console.log(`总耗时     : ${((Date.now() - t0) / 1000).toFixed(1)}s`);
+  const hardResults = events.filter((e) => e.type === 'verify.hard.result');
+  const lastReport = hardResults[hardResults.length - 1]?.payload as unknown as { errors?: unknown[] } | undefined;
+  console.log(`末轮报错   : ${lastReport?.errors?.length ?? '?'} 条`);
+  console.log(`产物       : runs/${runId}/bundle.html`);
+  if (!events.some((e) => e.type === 'run.finished')) process.exitCode = 1;
+}
+
+async function compare(): Promise<void> {
+  const key = process.env.DEEPSEEK_API_KEY;
+  let llm: LLMGateway;
+  if (key) {
+    llm = new DeepSeekLLM(key);
+    console.log('[compare] 使用真实 DeepSeek v4-pro');
+  } else {
+    llm = new FakeLLM(
+      fakeHandlers(
+        JSON.stringify({ title: 'broken', html: SAMPLE_BROKEN_HTML }),
+        JSON.stringify({ title: '打砖块', html: SAMPLE_GAME_HTML }),
+      ),
+    );
+    console.log('[compare] 无 API key，使用 fake LLM（仅验证流水线，数字无意义）');
+  }
+  const rows = await runCompare(llm);
+  writeCompareCsv(rows, 'runs/results-compare.csv');
+  console.log('\n三策略对比（可运行率，同一 L1 硬验证口径）：');
+  for (const r of rows) {
+    console.log(`  ${r.strategy.padEnd(20)} ${r.runnable}/${r.total}  (${r.rate})  平均首轮错误 ${r.avg_first_errors}`);
+  }
+}
+
 async function main(): Promise<void> {
   mkdirSync('runs', { recursive: true });
   const cmd = process.argv[2] ?? 'demo:single';
@@ -189,8 +242,14 @@ async function main(): Promise<void> {
     case 'demo:interrupt':
       await demoInterrupt();
       break;
+    case 'demo:real':
+      await demoReal();
+      break;
     case 'bench':
       await bench();
+      break;
+    case 'compare':
+      await compare();
       break;
     case 'replay':
       console.log(`命令 ${cmd} 将在后续里程碑实现`);
