@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { startRun } from '../api';
 import type { HealthInfo } from '../types';
 
 interface Props {
@@ -20,7 +21,6 @@ export function TaskConsole({ requirement, setRequirement, onStarted, health }: 
     setBusy(true);
     setError(null);
     try {
-      const { startRun } = await import('../api');
       const { runId } = await startRun(requirement.trim());
       onStarted(runId);
     } catch (e) {

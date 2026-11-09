@@ -49,10 +49,16 @@ export class FakeLLM implements LLMGateway {
  * low -> low, medium -> high, high -> max（对应 API 的 low/high/max 三档）。
  */
 export class DeepSeekLLM implements LLMGateway {
+  private total = { input: 0, output: 0, reasoning: 0, calls: 0 };
+
   constructor(
     private apiKey: string,
     private baseUrl = process.env.DEEPSEEK_BASE_URL ?? 'https://api.deepseek.com',
   ) {}
+
+  getUsage() {
+    return { ...this.total };
+  }
 
   async complete(opts: { agent: AgentProfile; messages: LLMMessage[]; json?: boolean }): Promise<LLMResult> {
     const model = opts.agent.model.name;
@@ -90,6 +96,10 @@ export class DeepSeekLLM implements LLMGateway {
       usage?: { prompt_tokens: number; completion_tokens: number; completion_tokens_details?: { reasoning_tokens?: number } };
     };
     const content = data.choices?.[0]?.message?.content ?? '';
+    this.total.calls++;
+    this.total.input += data.usage?.prompt_tokens ?? 0;
+    this.total.output += data.usage?.completion_tokens ?? 0;
+    this.total.reasoning += data.usage?.completion_tokens_details?.reasoning_tokens ?? 0;
     let json: unknown;
     if (opts.json) {
       try { json = JSON.parse(content); } catch { throw new Error(`DeepSeek 返回了非法 JSON：${content.slice(0, 300)}`); }

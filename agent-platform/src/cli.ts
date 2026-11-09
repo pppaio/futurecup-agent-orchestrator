@@ -145,10 +145,20 @@ async function bench(): Promise<void> {
   writeCsv(rows, 'runs/results.csv');
   const ok = rows.filter((r) => r.ok).length;
   console.log(`\n可运行率: ${ok}/${rows.length}  结果落盘: runs/results.csv`);
+  printUsage(llm);
 }
 
 function sleep(ms: number): Promise<void> {
   return new Promise((r) => setTimeout(r, ms));
+}
+
+function printUsage(llm: LLMGateway): void {
+  if (llm instanceof DeepSeekLLM) {
+    const u = llm.getUsage();
+    const cost = (u.input * 4.5 + u.output * 13.5) / 1_000_000; // 闲时价（元）
+    console.log(`\nToken 用量: 输入 ${u.input} · 输出 ${u.output} · 思考 ${u.reasoning} · 调用 ${u.calls} 次`);
+    console.log(`估算成本(闲时): ¥${cost.toFixed(2)}`);
+  }
 }
 
 async function demoInterrupt(): Promise<void> {
@@ -226,6 +236,7 @@ async function compare(): Promise<void> {
   for (const r of rows) {
     console.log(`  ${r.strategy.padEnd(20)} ${r.runnable}/${r.total}  (${r.rate})  平均首轮错误 ${r.avg_first_errors}`);
   }
+  printUsage(llm);
 }
 
 async function charts(): Promise<void> {
