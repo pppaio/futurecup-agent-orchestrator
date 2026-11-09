@@ -38,17 +38,18 @@ function extractBuilderHtml(events: RunEvent[]): string | null {
   }
 }
 
-/** 三策略对比：同一 20 样本、同一"能否通过 L1 硬验证"的口径。 */
-export async function runCompare(llm: LLMGateway): Promise<StrategyRow[]> {
+/** 三策略对比：同一批样本、同一"能否通过 L1 硬验证"的口径。limit 用于控成本/时间的子集实验。 */
+export async function runCompare(llm: LLMGateway, limit = DATASET.length): Promise<StrategyRow[]> {
   const store = new EventStore('runs');
   const sandbox = new PlaywrightSandbox();
   const rows: StrategyRow[] = [];
+  const subset = DATASET.slice(0, limit);
 
   for (const s of STRATEGIES) {
     let runnable = 0;
     let totalFirstErrors = 0;
     let verifyCount = 0;
-    for (const item of DATASET) {
+    for (const item of subset) {
       const engine = new Engine({
         llm,
         sandbox,
@@ -81,9 +82,9 @@ export async function runCompare(llm: LLMGateway): Promise<StrategyRow[]> {
     }
     rows.push({
       strategy: s.name,
-      total: DATASET.length,
+      total: subset.length,
       runnable,
-      rate: `${Math.round((runnable / DATASET.length) * 100)}%`,
+      rate: `${Math.round((runnable / subset.length) * 100)}%`,
       avg_first_errors: verifyCount ? (totalFirstErrors / verifyCount).toFixed(1) : '-',
     });
   }
