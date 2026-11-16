@@ -127,19 +127,20 @@
   <div class="num">6 / 15</div>
 </section>
 
-<!-- P7 五角色 + DAG -->
+<!-- P7 六角色 + DAG -->
 <section class="slide">
   <div class="kicker">多 Agent</div>
-  <h2>五个角色，一条带闭环的 DAG</h2>
+  <h2>六个角色，一条带三重闭环的 DAG</h2>
   <table>
     <tr><th>角色</th><th>职责</th><th>判定权</th></tr>
     <tr><td>分析师 analyst</td><td>需求 → 可机械验收的规格 + 假设 + 歧义</td><td>—</td></tr>
     <tr><td>生成者 builder</td><td>规格 → 单文件 HTML 产物</td><td>—</td></tr>
     <tr><td>硬验证沙箱 hard-sandbox</td><td>无头浏览器实测：加载/报错/渲染/交互</td><td><span class="accent">能否运行（阻断）</span></td></tr>
-    <tr><td>软裁判 critic</td><td>对照验收条件打分 1-5 + 偏差</td><td>好不好（不阻断）</td></tr>
-    <tr><td>修复者 fixer</td><td>错误卡片 + 摘要 → 新版产物</td><td>—</td></tr>
+    <tr><td>软裁判 critic</td><td>对照验收条件打分 1-5 + 偏差</td><td>好不好 → <span class="accent">低分自动返工</span></td></tr>
+    <tr><td>修复者 fixer</td><td>错误卡片/改进卡片 + 摘要 → 新版产物</td><td>—</td></tr>
+    <tr><td>修改者 reviser</td><td>完整旧产物 + 人工指令 → 增量改版</td><td>—</td></tr>
   </table>
-  <div class="sub" style="margin-top:22px">关键：<span class="accent">验证角色与执行角色是对抗关系</span>——这就是"多 Agent"值钱的地方，而不是 Agent 数量。</div>
+  <div class="sub" style="margin-top:18px">关键：<span class="accent">验证角色与执行角色是对抗关系</span>——多 Agent 值钱在对抗，不在数量。每角色模型/思考强度可独立配置（v4-pro / v4-flash × 低/中/高）。</div>
   <div class="num">7 / 15</div>
 </section>
 
@@ -175,7 +176,7 @@
     <tr><td>根因未命中</td><td>错误卡片集合重复出现</td><td>escalate：附"已尝试过的修法"</td></tr>
     <tr><td>假进展中止</td><td>修复者输出与上轮完全相同</td><td>abort：防御性妥协当场抓包</td></tr>
   </table>
-  <div class="sub" style="margin-top:18px">Loop Watchdog 是<span class="accent">外部只读观察者</span>：只看硬信号，不看 Agent 自述——这就是"自我循环"和"无限重试"的本质区别。</div>
+  <div class="sub" style="margin-top:18px">Loop Watchdog 是<span class="accent">外部只读观察者</span>：只看硬信号，不看 Agent 自述——这就是"自我循环"和"无限重试"的本质区别。另有<span class="accent">质量门控</span>：软裁判低分 → 差距自动回炉（≤2 轮）→ 不达标带缺陷交付。</div>
   <div class="num">9 / 15</div>
 </section>
 
@@ -193,13 +194,13 @@
   <div class="num">10 / 15</div>
 </section>
 
-<!-- P11 可中断可复现 -->
+<!-- P11 人工确认 + 可复现 -->
 <section class="slide">
   <div class="kicker">差异化</div>
-  <h2>可中断 · 可插入 · 可复现</h2>
+  <h2>人工确认点 · 修改返工 · 版本回退</h2>
   <div class="grid g2" style="margin-top:36px">
-    <div class="card"><h3>人工介入节点</h3><p>运行中随时中断 → 暂停（在途节点跑完即停）→ 插入指令（"加个计分板"）→ 断点续跑。指令作为高优先级消息注入下一 Agent 上下文，并记入事件流。用户中途接管 Agent 是行业公认的开放问题，我们给出了能跑的实现。</p></div>
-    <div class="card"><h3>可复现三件套</h3><p>每次运行落盘 <span style="font-family:Consolas">run.json</span>（模型快照 + seed + 产物 sha256）+ <span style="font-family:Consolas">events.jsonl</span>。事件流可完整重放一次运行；暂停快照 = 事件流末尾位置，不另建状态表。</p></div>
+    <div class="card"><h3>人工确认点 + 修改返工</h3><p>运行中随时中断插入指令；交付前流程<span class="accent">暂停等你拍板</span>：接受交付，或一句修改指令（"加个计分板"）打回——修改者拿到完整旧产物做增量改版，重新走验证闭环。用户中途接管 Agent 是行业公认的开放问题，我们给出了能跑的实现。</p></div>
+    <div class="card"><h3>版本化回退 + 可复现三件套</h3><p>每次交付写 <span style="font-family:Consolas">bundle-vN.html</span> 累积版本，旧版随时回退查看；每次运行落盘 <span style="font-family:Consolas">run.json</span> + <span style="font-family:Consolas">events.jsonl</span>，事件流可完整重放——快照 = 事件流末尾位置，不另建状态表。</p></div>
   </div>
   <div class="num">11 / 15</div>
 </section>
