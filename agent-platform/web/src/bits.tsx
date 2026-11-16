@@ -3,6 +3,7 @@ import type { RunStatus } from './types';
 export const STATUS_TEXT: Record<RunStatus, string> = {
   running: 'running',
   paused: 'paused',
+  awaiting_human: 'awaiting_human',
   done: 'done',
   failed: 'failed',
   unknown: 'unknown',
@@ -11,6 +12,7 @@ export const STATUS_TEXT: Record<RunStatus, string> = {
 export const STATUS_LABEL: Record<RunStatus, string> = {
   running: '运行中',
   paused: '已暂停',
+  awaiting_human: '待人工确认',
   done: '已完成',
   failed: '失败',
   unknown: '未知',
@@ -39,9 +41,11 @@ export const NODES: NodeMeta[] = [
   { id: 'n2', label: '生成者', hint: '产出 HTML' },
   { id: 'n3', label: '硬验证', hint: '沙箱判定' },
   { id: 'n4', label: '软裁判', hint: '评分缺口' },
+  { id: 'n7', label: '质量门控', hint: '低分返工' },
   { id: 'n5', label: '修复者', hint: '回灌修复' },
-  { id: 'n6', label: '打包', hint: '单文件产物' },
-  { id: 'n7', label: '人工确认', hint: '确认点' },
+  { id: 'n6', label: '打包', hint: '版本化产物' },
+  { id: 'n8', label: '修改者', hint: '按指令改版' },
+  { id: 'n9', label: '人工确认', hint: '接受/返工' },
 ];
 
 export const NODE_LABEL: Record<string, string> = Object.fromEntries(

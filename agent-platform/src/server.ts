@@ -1,5 +1,5 @@
 import express from 'express';
-import { readFileSync, existsSync } from 'node:fs';
+import { readFileSync, existsSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { EventStore } from './event/store.js';
 import { DeepSeekLLM, FakeLLM } from './gateway/llm.js';
@@ -39,6 +39,7 @@ if (key) {
     builder: () => JSON.stringify({ title: 'broken', html: SAMPLE_BROKEN_HTML }),
     critic: () => JSON.stringify({ score: 2, gaps: ['无法运行'] }),
     fixer: () => JSON.stringify({ title: '打砖块', html: SAMPLE_GAME_HTML }),
+    reviser: () => JSON.stringify({ title: '打砖块', html: SAMPLE_GAME_HTML }),
   });
 }
 
@@ -76,7 +77,11 @@ function buildReport(runId: string) {
     const t = events[i].type;
     if (t === 'run.finished') { status = 'done'; break; }
     if (t === 'run.failed') { status = 'failed'; break; }
-    if (t === 'run.interrupted') { status = 'paused'; break; }
+    if (t === 'run.interrupted') {
+      const reason = (events[i].payload as { reason?: string }).reason;
+      status = reason === 'awaiting_human' ? 'awaiting_human' : 'paused';
+      break;
+    }
     if (t === 'run.resumed' || t === 'run.started') { status = 'running'; break; }
   }
   const hardReports = events.filter((e) => e.type === 'verify.hard.result').map((e) => e.payload as unknown as HardReport);
@@ -84,6 +89,13 @@ function buildReport(runId: string) {
   const soft = events.find((e) => e.type === 'verify.soft.verdict')?.payload;
   const finished = events.find((e) => e.type === 'run.finished');
   const lastHard = hardReports[hardReports.length - 1];
+  // 版本列表（人工返工后累积）
+  let versions: string[] = [];
+  try {
+    versions = readdirSync(store.runDir(runId)).filter((f) => /^bundle-v\d+\.html$/.test(f)).sort();
+  } catch {
+    /* 目录不存在 */
+  }
   return {
     runId,
     status,
@@ -93,6 +105,7 @@ function buildReport(runId: string) {
     soft_report: soft ?? null,
     wall_ms: (finished?.payload as { wall_ms?: number } | undefined)?.wall_ms ?? null,
     verify_count: hardReports.length,
+    versions,
   };
 }
 
@@ -106,7 +119,9 @@ app.post('/api/runs', (req, res) => {
     res.status(400).json({ error: 'requirement 不能为空' });
     return;
   }
-  const runId = engine.start(GAME_GEN_WF, { requirement });
+  // 每 Agent 的模型/思考强度覆盖：{ analyst: { model: 'deepseek-flash', effort: 'low' }, ... }
+  const config = (req.body?.config ?? {}) as Record<string, { model?: string; effort?: 'low' | 'medium' | 'high' }>;
+  const runId = engine.start(GAME_GEN_WF, { requirement }, { overrides: config });
   runsOrder.unshift(runId);
   res.json({ runId });
 });
@@ -156,7 +171,9 @@ app.get('/api/runs/:id/report', (req, res) => {
 });
 
 app.get('/api/runs/:id/artifact', (req, res) => {
-  const p = join(store.runDir(req.params.id), 'bundle.html');
+  // ?v=N 查看历史版本（人工返工前的旧版）
+  const v = Number(req.query.v ?? 0);
+  const p = v > 0 ? join(store.runDir(req.params.id), `bundle-v${v}.html`) : join(store.runDir(req.params.id), 'bundle.html');
   if (!existsSync(p)) {
     res.status(404).json({ error: '产物不存在' });
     return;

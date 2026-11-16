@@ -1,12 +1,13 @@
 import { useEffect, useRef, useState } from 'react';
 import { artifactUrl, getReport, interruptRun, openEventStream, resumeRun } from '../api';
 import { NODE_LABEL, StatusBadge, type NodeState } from '../bits';
-import type { RunEvent, RunStatus } from '../types';
+import type { AgentConfig, RunEvent, RunStatus } from '../types';
 import { NodeBar } from './NodeBar';
 
 interface Props {
   runId: string;
   requirement: string;
+  config: AgentConfig;
   onOpenReport: () => void;
   onBack: () => void;
 }
@@ -43,8 +44,10 @@ function summarizeEvent(e: RunEvent): string {
       return `软裁判 ${String(p.score ?? '—')}/5 · ${arrLen(p.gaps)} 个缺口`;
     case 'loop.iteration':
       return p.exceeded ? '循环超出上限' : `循环迭代 ${String(p.iteration ?? '')}/${String(p.max ?? '')}`;
-    case 'run.interrupted':
-      return '已中断（暂停）';
+    case 'run.interrupted': {
+      const reason = String(p.reason ?? '');
+      return reason === 'awaiting_human' ? '到达人工确认点：等待接受 / 返工决定' : '已中断（暂停）';
+    }
     case 'run.resumed':
       return '已续跑';
     case 'human.instruction':
@@ -64,7 +67,7 @@ function summarizeEvent(e: RunEvent): string {
   }
 }
 
-export function RunDashboard({ runId, requirement, onOpenReport, onBack }: Props) {
+export function RunDashboard({ runId, requirement, config, onOpenReport, onBack }: Props) {
   const [events, setEvents] = useState<RunEvent[]>([]);
   const [status, setStatus] = useState<RunStatus>('unknown');
   const [nodeStates, setNodeStates] = useState<Record<string, NodeState>>({});
@@ -90,7 +93,7 @@ export function RunDashboard({ runId, requirement, onOpenReport, onBack }: Props
           setStatus('running');
           break;
         case 'run.interrupted':
-          setStatus('paused');
+          setStatus((e.payload as { reason?: string }).reason === 'awaiting_human' ? 'awaiting_human' : 'paused');
           break;
         case 'run.finished':
           setStatus('done');
@@ -144,6 +147,7 @@ export function RunDashboard({ runId, requirement, onOpenReport, onBack }: Props
 
   const showArtifact = hasArtifact || status === 'done';
   const paused = status === 'paused';
+  const awaiting = status === 'awaiting_human';
   const terminal = status === 'done' || status === 'failed';
 
   async function handleInterrupt() {
@@ -163,6 +167,20 @@ export function RunDashboard({ runId, requirement, onOpenReport, onBack }: Props
     setActionMsg(null);
     try {
       await resumeRun(runId, instruction.trim());
+      setInstruction('');
+    } catch (e) {
+      setActionMsg(e instanceof Error ? e.message : String(e));
+    } finally {
+      setActing(null);
+    }
+  }
+
+  /** 人工确认点：接受交付（无指令）。 */
+  async function handleAccept() {
+    setActing('resume');
+    setActionMsg(null);
+    try {
+      await resumeRun(runId, '');
       setInstruction('');
     } catch (e) {
       setActionMsg(e instanceof Error ? e.message : String(e));
@@ -195,6 +213,18 @@ export function RunDashboard({ runId, requirement, onOpenReport, onBack }: Props
         <aside className="panel panel-nodes">
           <h3>节点状态</h3>
           <NodeBar states={nodeStates} />
+          <div className="agent-config-note">
+            {Object.entries(config)
+              .filter(([, v]) => !!v)
+              .map(([id, v]) => (
+                <div key={id} className="agent-config-row">
+                  <span className="agent-config-id">{id}</span>
+                  <span className="agent-config-val">
+                    {v.model} · {v.effort === 'low' ? '低' : v.effort === 'high' ? '高' : '中'}
+                  </span>
+                </div>
+              ))}
+          </div>
         </aside>
 
         <section className="panel panel-events">
@@ -225,30 +255,59 @@ export function RunDashboard({ runId, requirement, onOpenReport, onBack }: Props
       </div>
 
       <div className="panel panel-controls">
-        <button
-          className="btn btn-warn"
-          onClick={handleInterrupt}
-          disabled={acting !== null || terminal}
-        >
-          {acting === 'interrupt' ? '中断中…' : '中断'}
-        </button>
-        <input
-          className="instr-input"
-          placeholder="插入人工指令（续跑时注入下一个 Agent 的上下文）"
-          value={instruction}
-          onChange={(e) => setInstruction(e.target.value)}
-          disabled={!paused}
-        />
-        <button
-          className="btn btn-primary"
-          onClick={handleResume}
-          disabled={!paused || acting !== null}
-        >
-          {acting === 'resume' ? '续跑中…' : '续跑'}
-        </button>
-        {actionMsg && <span className="action-msg">{actionMsg}</span>}
-        {!paused && !terminal && (
-          <span className="control-hint">中断在下一个节点边界生效；暂停后可插入指令并续跑。</span>
+        {awaiting ? (
+          <div className="confirm-row">
+            <span className="confirm-title">🛎 产物已生成，等你拍板：</span>
+            <button
+              className="btn btn-primary"
+              onClick={handleAccept}
+              disabled={acting !== null}
+            >
+              {acting === 'resume' ? '处理中…' : '✅ 接受交付'}
+            </button>
+            <input
+              className="instr-input"
+              placeholder="不满意？输入修改指令（如：加个计分板、背景换成深蓝）"
+              value={instruction}
+              onChange={(e) => setInstruction(e.target.value)}
+            />
+            <button
+              className="btn btn-warn"
+              onClick={handleResume}
+              disabled={acting !== null || instruction.trim().length === 0}
+            >
+              {acting === 'resume' ? '返工中…' : '🔧 返工'}
+            </button>
+            {actionMsg && <span className="action-msg">{actionMsg}</span>}
+          </div>
+        ) : (
+          <>
+            <button
+              className="btn btn-warn"
+              onClick={handleInterrupt}
+              disabled={acting !== null || terminal}
+            >
+              {acting === 'interrupt' ? '中断中…' : '中断'}
+            </button>
+            <input
+              className="instr-input"
+              placeholder="插入人工指令（续跑时注入下一个 Agent 的上下文）"
+              value={instruction}
+              onChange={(e) => setInstruction(e.target.value)}
+              disabled={!paused}
+            />
+            <button
+              className="btn btn-primary"
+              onClick={handleResume}
+              disabled={!paused || acting !== null}
+            >
+              {acting === 'resume' ? '续跑中…' : '续跑'}
+            </button>
+            {actionMsg && <span className="action-msg">{actionMsg}</span>}
+            {!paused && !terminal && (
+              <span className="control-hint">中断在下一个节点边界生效；暂停后可插入指令并续跑。</span>
+            )}
+          </>
         )}
       </div>
     </div>

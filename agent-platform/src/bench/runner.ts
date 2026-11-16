@@ -28,6 +28,7 @@ export async function runBench(llm: LLMGateway, dataset: BenchItem[] = DATASET):
       packager: new SingleHtmlPackager(),
       store,
       agents: ALL_AGENTS,
+      humanGate: false, // 批量实验：人工确认点自动接受
     });
     const t0 = Date.now();
     const runId = engine.start(GAME_GEN_WF, { requirement: item.requirement });

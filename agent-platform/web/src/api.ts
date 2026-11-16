@@ -1,4 +1,4 @@
-import type { HealthInfo, RunEvent, RunReport } from './types';
+import type { AgentConfig, HealthInfo, RunEvent, RunReport } from './types';
 
 async function json<T>(res: Response): Promise<T> {
   if (!res.ok) {
@@ -14,11 +14,11 @@ async function json<T>(res: Response): Promise<T> {
   return (await res.json()) as T;
 }
 
-export async function startRun(requirement: string): Promise<{ runId: string }> {
+export async function startRun(requirement: string, config?: AgentConfig): Promise<{ runId: string }> {
   const res = await fetch('/api/runs', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ requirement }),
+    body: JSON.stringify({ requirement, config }),
   });
   return json<{ runId: string }>(res);
 }
@@ -65,4 +65,5 @@ export function openEventStream(
   return es;
 }
 
-export const artifactUrl = (runId: string) => `/api/runs/${runId}/artifact`;
+export const artifactUrl = (runId: string, version?: number) =>
+  version && version > 0 ? `/api/runs/${runId}/artifact?v=${version}` : `/api/runs/${runId}/artifact`;

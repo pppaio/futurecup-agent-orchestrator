@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { getHealth } from './api';
-import type { HealthInfo } from './types';
+import type { AgentConfig, HealthInfo } from './types';
 import { TaskConsole } from './components/TaskConsole';
 import { RunDashboard } from './components/RunDashboard';
 import { VerifyReport } from './components/VerifyReport';
@@ -11,6 +11,7 @@ export default function App() {
   const [view, setView] = useState<View>('console');
   const [runId, setRunId] = useState<string | null>(null);
   const [requirement, setRequirement] = useState('');
+  const [config, setConfig] = useState<AgentConfig>({});
   const [health, setHealth] = useState<HealthInfo | null>(null);
 
   useEffect(() => {
@@ -19,8 +20,9 @@ export default function App() {
       .catch(() => setHealth(null));
   }, []);
 
-  function handleStarted(id: string) {
+  function handleStarted(id: string, cfg: AgentConfig) {
     setRunId(id);
+    setConfig(cfg);
     setView('dashboard');
   }
 
@@ -71,6 +73,7 @@ export default function App() {
           <RunDashboard
             runId={runId}
             requirement={requirement}
+            config={config}
             onOpenReport={() => setView('report')}
             onBack={() => setView('console')}
           />

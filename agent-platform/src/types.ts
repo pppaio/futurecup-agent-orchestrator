@@ -32,10 +32,11 @@ export type AgentProfile = z.infer<typeof AgentProfileSchema>;
 // ---------- 工作流 DAG ----------
 export const WorkflowNodeSchema = z.object({
   id: z.string(),
-  type: z.enum(['agent', 'verify', 'packager', 'human', 'subflow']),
+  type: z.enum(['agent', 'verify', 'packager', 'human', 'subflow', 'gate']),
   agent: z.string().optional(),
   verifier: z.string().optional(),
   packager: z.string().optional(),
+  gate: z.string().optional(),
   inputs: z.array(z.string()).optional(),
   outputs: z.array(z.string()).optional(),
   note: z.string().optional(),
@@ -47,7 +48,7 @@ export const WorkflowEdgeSchema = z.object({
   to: z.string(),
   parallel: z.boolean().optional(),
   when: z.enum(['always', 'pass', 'fail']).default('always'),
-  loop: z.object({ max_iters: z.number() }).optional(),
+  loop: z.object({ max_iters: z.number(), on_exhaust: z.string().optional() }).optional(),
 });
 export type WorkflowEdge = z.infer<typeof WorkflowEdgeSchema>;
 
@@ -61,6 +62,10 @@ export const WorkflowDefSchema = z.object({
     timeout_sec: z.number().default(900),
     max_concurrency: z.number().default(4),
   }).default({ max_total_iters: 6, timeout_sec: 900, max_concurrency: 4 }),
+  quality: z.object({
+    min_score: z.number().default(4),
+    max_iters: z.number().default(2),
+  }).optional(),
 });
 export type WorkflowDef = z.infer<typeof WorkflowDefSchema>;
 

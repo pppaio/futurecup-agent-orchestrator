@@ -144,6 +144,29 @@ export function VerifyReport({ runId, onBack }: Props) {
               )}
             </section>
           </div>
+
+          <section className="panel">
+            <h3>版本历史（人工返工累积，可回退查看）</h3>
+            {report.versions.length === 0 ? (
+              <div className="empty-note">暂无版本记录</div>
+            ) : (
+              <ul className="versions">
+                {report.versions.map((v) => {
+                  const n = Number(/bundle-v(\d+)\.html/.exec(v)?.[1] ?? 0);
+                  return (
+                    <li key={v}>
+                      <a href={artifactUrl(runId, n)} target="_blank" rel="noreferrer">
+                        {v}
+                      </a>
+                      {v === report.versions[report.versions.length - 1] && (
+                        <span className="version-latest">最新</span>
+                      )}
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
+          </section>
         </>
       )}
     </div>

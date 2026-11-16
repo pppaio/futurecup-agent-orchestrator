@@ -50,7 +50,7 @@ export interface SoftReport {
   gaps: string[];
 }
 
-export type RunStatus = 'running' | 'paused' | 'done' | 'failed' | 'unknown';
+export type RunStatus = 'running' | 'paused' | 'awaiting_human' | 'done' | 'failed' | 'unknown';
 
 export interface RunReport {
   runId: string;
@@ -61,7 +61,16 @@ export interface RunReport {
   soft_report: SoftReport | null;
   wall_ms: number | null;
   verify_count: number;
+  versions: string[];
 }
+
+/** 每 Agent 的模型/思考强度覆盖。 */
+export interface AgentConfigItem {
+  model?: string;
+  effort?: 'low' | 'medium' | 'high';
+}
+
+export type AgentConfig = Record<string, AgentConfigItem>;
 
 export interface HealthInfo {
   ok: boolean;

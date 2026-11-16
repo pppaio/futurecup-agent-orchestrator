@@ -10,7 +10,7 @@ import { PlaywrightSandbox } from './sandbox/sandbox.js';
 import { SingleHtmlPackager } from './packager/packager.js';
 import { Engine } from './engine/engine.js';
 import { ALL_AGENTS } from './agents/profiles.js';
-import { SAMPLE_GAME_HTML } from './agents/sample-game.js';
+import { SAMPLE_GAME_HTML, SAMPLE_GAME_V2_HTML } from './agents/sample-game.js';
 import { SAMPLE_BROKEN_HTML } from './agents/sample-broken.js';
 import { GAME_GEN_WF } from './workflows/game-gen.js';
 import type { HardReport, RunEvent, WorkflowDef } from './types.js';
@@ -33,7 +33,7 @@ const M1_SINGLE_WF: WorkflowDef = {
   limits: { max_total_iters: 6, timeout_sec: 900, max_concurrency: 4 },
 };
 
-function fakeHandlers(builderOutput: string, fixerOutput: string) {
+function fakeHandlers(builderOutput: string, fixerOutput: string, criticScore = 5) {
   return {
     analyst: () =>
       JSON.stringify({
@@ -45,23 +45,34 @@ function fakeHandlers(builderOutput: string, fixerOutput: string) {
         tasks: [],
       }),
     builder: () => builderOutput,
-    critic: () => JSON.stringify({ score: 2, gaps: ['游戏无法运行'] }),
+    critic: () => JSON.stringify({ score: criticScore, gaps: criticScore < 4 ? ['画面简陋，缺少计分显示'] : [] }),
     fixer: () => fixerOutput,
+    reviser: (messages: { role: string; content: string }[]) => {
+      const userText = messages
+        .filter((m) => m.role === 'user')
+        .map((m) => m.content)
+        .join('\n');
+      // 演示：指令含「计分板」时返回带醒目计分板的 v2
+      if (userText.includes('计分板')) return JSON.stringify({ title: '打砖块·计分板版', html: SAMPLE_GAME_V2_HTML });
+      return JSON.stringify({ title: '打砖块', html: SAMPLE_GAME_HTML });
+    },
   };
 }
 
 function makeFakeEngine(
   builderOutput: string,
   fixerOutput = JSON.stringify({ title: '打砖块', html: SAMPLE_GAME_HTML }),
+  opts: { humanGate?: boolean; criticScore?: number } = {},
 ) {
   const store = new EventStore('runs');
-  const fake = new FakeLLM(fakeHandlers(builderOutput, fixerOutput));
+  const fake = new FakeLLM(fakeHandlers(builderOutput, fixerOutput, opts.criticScore));
   const engine = new Engine({
     llm: fake,
     sandbox: new PlaywrightSandbox(),
     packager: new SingleHtmlPackager(),
     store,
     agents: ALL_AGENTS,
+    humanGate: opts.humanGate ?? false,
   });
   return { engine, store };
 }
@@ -172,6 +183,12 @@ async function demoInterrupt(): Promise<void> {
   console.log('已暂停，插入指令「加个计分板」并续跑');
   engine.resume(runId, '加个计分板');
   await engine.wait(runId);
+  // 续跑到人工确认点 → 接受交付
+  let evInt = store.replay(runId);
+  if (evInt.some((e) => e.type === 'run.interrupted' && (e.payload as { reason?: string }).reason === 'awaiting_human')) {
+    engine.resume(runId);
+    await engine.wait(runId);
+  }
   const events = store.replay(runId);
   const interrupted = events.some((e) => e.type === 'run.interrupted');
   const resumed = events.some((e) => e.type === 'run.resumed');
@@ -201,6 +218,7 @@ async function demoReal(): Promise<void> {
     packager: new SingleHtmlPackager(),
     store,
     agents: ALL_AGENTS,
+    humanGate: false, // CLI 冒烟：自动接受人工确认点
   });
   console.log('[demo:real] 真实 v4-pro 全链路：做个能玩的打砖块');
   const t0 = Date.now();
@@ -252,11 +270,96 @@ async function demoGate(): Promise<void> {
   console.log(`续跑前生成者已运行: ${builderRanBefore}`);
   engine.resume(runId, '做一个打砖块游戏');
   await engine.wait(runId);
+  // 流程继续走到人工确认点 → 接受
+  let ev2 = store.replay(runId);
+  if (ev2.some((e) => e.type === 'run.interrupted' && (e.payload as { reason?: string }).reason === 'awaiting_human')) {
+    engine.resume(runId);
+    await engine.wait(runId);
+  }
   events = store.replay(runId);
   const finished = events.some((e) => e.type === 'run.finished');
   console.log(`续跑后终态: ${finished ? 'finished' : 'other'}`);
   const ok = reason === 'blocking_ambiguities' && !!prompt && !builderRanBefore && finished;
   console.log(ok ? '\n✅ §5.8 歧义停机跑通' : '\n⚠️ 有环节缺失');
+  if (!ok) process.exitCode = 1;
+}
+
+async function demoQuality(): Promise<void> {
+  // 有状态的假裁判：第一版打 2 分（触发质量返工），返工后打 5 分
+  let criticCalls = 0;
+  const store = new EventStore('runs');
+  const fake = new FakeLLM({
+    analyst: () =>
+      JSON.stringify({
+        goal: '可玩的打砖块',
+        graphic: true,
+        acceptance: ['页面加载无 console 报错', 'canvas 有非空像素', '球拍可左右控制且球与砖块碰撞'],
+        assumptions: ['单人、无存档'],
+        ambiguities: [],
+        tasks: [],
+      }),
+    builder: () => JSON.stringify({ title: '打砖块', html: SAMPLE_GAME_HTML }),
+    critic: () => {
+      criticCalls++;
+      return JSON.stringify(
+        criticCalls === 1 ? { score: 2, gaps: ['画面简陋，缺少计分显示'] } : { score: 5, gaps: [] },
+      );
+    },
+    fixer: () => JSON.stringify({ title: '打砖块·计分板版', html: SAMPLE_GAME_V2_HTML }),
+    reviser: () => JSON.stringify({ title: '打砖块', html: SAMPLE_GAME_HTML }),
+  });
+  const engine = new Engine({
+    llm: fake,
+    sandbox: new PlaywrightSandbox(),
+    packager: new SingleHtmlPackager(),
+    store,
+    agents: ALL_AGENTS,
+    humanGate: false,
+  });
+  console.log('[demo:quality] 质量门控：软裁判首版打 2 分 → 自动返工 → 二版打 5 分 → 交付');
+  const runId = engine.start(GAME_GEN_WF, { requirement: '做个能玩的打砖块' });
+  await engine.wait(runId);
+  const events = store.replay(runId);
+  summarize(events);
+  const verdicts = events.filter((e) => e.type === 'verify.soft.verdict');
+  const scores = verdicts.map((e) => (e.payload as { score: number }).score);
+  const finished = events.some((e) => e.type === 'run.finished');
+  const packed = events.some((e) => e.type === 'artifact.created');
+  console.log(`软裁判打分: [${scores.join(', ')}]`);
+  console.log(`打包交付  : ${packed}`);
+  const ok = finished && packed && scores.length >= 2 && scores[0] === 2 && scores[scores.length - 1] === 5;
+  console.log(ok ? '\n✅ 质量门控 + 低分自动返工跑通' : '\n⚠️ 有环节缺失');
+  if (!ok) process.exitCode = 1;
+}
+
+async function demoConfirm(): Promise<void> {
+  const { engine, store } = makeFakeEngine(JSON.stringify({ title: 'broken', html: SAMPLE_BROKEN_HTML }), undefined, {
+    humanGate: true,
+  });
+  console.log('[demo:confirm] 人工确认点：接受 / 返工（附指令）');
+  const runId = engine.start(GAME_GEN_WF, { requirement: '做个能玩的打砖块' });
+  await engine.wait(runId);
+  let events = store.replay(runId);
+  const paused = events.find((e) => e.type === 'run.interrupted');
+  const reason = (paused?.payload as { reason?: string }).reason;
+  console.log(`暂停原因 : ${reason}`);
+  // 第一次：给指令返工
+  engine.resume(runId, '加个计分板');
+  await engine.wait(runId);
+  events = store.replay(runId);
+  const paused2 = events.filter((e) => e.type === 'run.interrupted').length;
+  const instr = events.some((e) => e.type === 'human.instruction' && (e.payload as { text?: string }).text === '加个计分板');
+  console.log(`返工后再次到确认点: ${paused2 === 2} · 指令事件: ${instr}`);
+  // 第二次：接受
+  engine.resume(runId);
+  await engine.wait(runId);
+  events = store.replay(runId);
+  const finished = events.some((e) => e.type === 'run.finished');
+  const artifacts = events.filter((e) => e.type === 'artifact.created');
+  const versions = artifacts.map((e) => ((e.payload as { bundle?: { version?: number } }).bundle?.version ?? '?'));
+  console.log(`接受后终态: ${finished ? 'finished' : 'other'} · 打包版本: [${versions.join(', ')}]`);
+  const ok = reason === 'awaiting_human' && instr && finished && versions.length >= 2;
+  console.log(ok ? '\n✅ 人工确认 + 返工 + 版本化交付跑通' : '\n⚠️ 有环节缺失');
   if (!ok) process.exitCode = 1;
 }
 
@@ -340,6 +443,12 @@ async function main(): Promise<void> {
       break;
     case 'demo:gate':
       await demoGate();
+      break;
+    case 'demo:quality':
+      await demoQuality();
+      break;
+    case 'demo:confirm':
+      await demoConfirm();
       break;
     case 'bench':
       await bench();

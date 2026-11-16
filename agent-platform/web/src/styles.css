@@ -825,3 +825,30 @@ a.btn {
     grid-template-columns: repeat(2, 1fr);
   }
 }
+
+/* 角色配置面板 */
+.config-panel { margin-top: 14px; }
+.config-head { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-bottom: 10px; flex-wrap: wrap; }
+.config-presets { display: flex; gap: 8px; }
+.config-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.config-table th, .config-table td { text-align: left; padding: 6px 8px; border-bottom: 1px solid #1a2440; }
+.config-table select { background: #0d1526; color: #e5e7eb; border: 1px solid #24304d; border-radius: 6px; padding: 4px 8px; }
+.config-hint { color: #64748b; font-size: 12px; margin-top: 8px; }
+
+/* 看板：角色配置速览 */
+.agent-config-note { margin-top: 12px; border-top: 1px solid #1a2440; padding-top: 10px; }
+.agent-config-row { display: flex; justify-content: space-between; font-size: 11px; color: #94a3b8; padding: 2px 0; }
+.agent-config-val { color: #22d3ee; }
+
+/* 人工确认行 */
+.confirm-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.confirm-title { font-weight: 700; color: #fbbf24; }
+
+/* 版本历史 */
+.versions { list-style: none; }
+.versions li { display: flex; gap: 10px; align-items: center; padding: 6px 0; }
+.versions a { color: #22d3ee; text-decoration: none; font-family: monospace; }
+.version-latest { font-size: 11px; background: #16324a; color: #67e8f9; border-radius: 6px; padding: 1px 8px; }
+
+/* 待人工确认徽标 */
+.badge-awaiting_human { background: #3b2f0e; color: #fbbf24; border: 1px solid #fbbf2444; }
