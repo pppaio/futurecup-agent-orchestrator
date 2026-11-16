@@ -104,9 +104,9 @@
 
 ### 3.3 工作流定义（WorkflowDef，DAG）
 
-工作流用 JSON 描述为一个有向无环图，节点支持 `agent / verify / packager / human / subflow` 五类，边支持顺序、并行分支（parallel）、条件（when: always/pass/fail）、循环（回边 + loop.max_iters）、子工作流嵌套。**循环不在 DAG 上做特殊处理**：回边在运行时等价于「该节点重新入队」，靠 loop 计数与全局 max_total_iters 双重兜底——既保留 DAG 的静态校验能力，又支持迭代。
+工作流用 JSON 描述为一个有向无环图，节点支持 `agent / verify / packager / human / gate / subflow` 六类，边支持顺序、并行分支（parallel）、条件（when: always/pass/fail）、循环（回边 + loop.max_iters + 超限兜底 on_exhaust）、子工作流嵌套。**循环不在 DAG 上做特殊处理**：回边在运行时等价于「该节点重新入队」，靠 loop 计数与全局 max_total_iters 双重兜底——既保留 DAG 的静态校验能力，又支持迭代。
 
-本平台主工作流 `game-gen-v1`（小游戏生成闭环）的拓扑为：analyst → builder →（hard-sandbox 硬验证 ‖ critic 软裁判并行）→ 验证失败则 fixer 回灌修复（回边，≤3 轮）→ 通过则打包 → 人工确认点。
+本平台主工作流 `game-gen-v2`（小游戏生成闭环）的拓扑为：analyst → builder → hard-sandbox 硬验证（失败则 fixer 回灌修复，≤3 轮）→ 通过后 critic 软裁判打分 → **质量门控（gate，确定性代码：低于 4 分自动把差距压成改进卡片回炉 fixer，≤2 轮，耗尽仍打包带缺陷交付）** → 打包（版本化）→ **人工确认点（human：暂停，可「接受交付」或「输入修改指令返工」——修改者 reviser 拿到完整旧产物 + 指令改版，重新走验证闭环，≤5 轮，历史版本 bundle-vN 可回退）**。
 
 ### 3.4 控制面确定性（红线 R1 / H6）
 
@@ -210,11 +210,11 @@ ok = load_ok && errors.length === 0 && canvas_nonempty && interactionScript 未�
 | `gateway/llm.ts` | LLM 网关 | 统一接口 + FakeLLM（跑全链路）+ DeepSeekLLM（OpenAI 兼容，思考强度 low/medium/high → low/high/max，JSON 模式） |
 | `reducer.ts` | 确定性归约器 | 错误归一化（≤3 张卡片、去重）+ 产物摘要，**零 LLM** |
 | `agents/*.ts` | 四角色定义 | analyst/builder/critic/fixer 的 role_prompt、能力标签、输出契约 |
-| `workflows/game-gen.ts` | 主工作流 | 7 节点 DAG + fixer 回边循环（max_iters 3） |
+| `workflows/game-gen.ts` | 主工作流 | 9 节点 DAG：硬修复循环（max_iters 3）+ 质量门控返工循环（max_iters 2）+ 人工确认/返工循环（max_iters 5） |
 | `packager/packager.ts` | 打包器 | SingleHtmlPackager 输出 index.html + README；exe 打包器预留接口 |
 | `bench/dataset.ts` / `runner.ts` | 实验流水线 | 20 条样本（5 类 × 4 条）+ 批量 runner + results.csv 落盘 |
 
-**当前实现状态**：M1~M5 已完成并全部经真实 v4-pro 验证——事件流 + 引擎骨架 + 沙箱（M1）、五角色 + DAG + 硬验证门控 + Fixer 循环 + Loop Watchdog + 错误归一化（M2）、中断/插入/续跑 + §5.8 歧义停机 + 三页前端 + REST/SSE 后端（M3）、打包器（M4）、20 样本批量实验与图表（M5）。三策略对比实验运行中；RAG/MCP 为 roadmap（见 8.2）。
+**当前实现状态**：M1~M5 已完成并全部经真实 v4-pro 验证——事件流 + 引擎骨架 + 沙箱（M1）、六角色（含修改者）+ DAG + 硬验证门控 + Fixer 循环 + Loop Watchdog + 错误归一化（M2）、中断/插入/续跑 + §5.8 歧义停机 + **质量门控（低分自动返工）** + **人工确认点（接受/返工 + 版本化回退）** + **每角色模型/思考强度配置** + 三页前端 + REST/SSE 后端（M3）、打包器（M4）、20 样本批量实验与图表（M5）。三策略对比已完成（85%/90%/100%）；RAG/MCP 为 roadmap（见 8.2）。
 
 **系统截图**（真实 v4-pro 运行）：
 
