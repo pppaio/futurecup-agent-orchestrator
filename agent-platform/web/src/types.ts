@@ -59,9 +59,10 @@ export interface RunReport {
   last_ok: boolean | null;
   last_errors: HardError[];
   soft_report: SoftReport | null;
+  verdict_history: { seq: number; score: number | null; gaps: string[] }[];
   wall_ms: number | null;
   verify_count: number;
-  versions: string[];
+  versions: { file: string; version: number; score: number | null; gaps: string[] }[];
 }
 
 /** 每 Agent 的模型/思考强度覆盖。 */

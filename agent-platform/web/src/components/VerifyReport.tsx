@@ -146,24 +146,43 @@ export function VerifyReport({ runId, onBack }: Props) {
           </div>
 
           <section className="panel">
+            <h3>软裁判打分历史（每次评分，最新的在上）</h3>
+            {report.verdict_history.length === 0 ? (
+              <div className="empty-note">暂无评分记录</div>
+            ) : (
+              <ul className="verdict-history">
+                {[...report.verdict_history].reverse().map((v) => (
+                  <li key={v.seq} className={v.score !== null && v.score < 4 ? 'verdict-low' : ''}>
+                    <span className="verdict-score">#{v.seq} · {v.score ?? '—'}/5</span>
+                    {v.gaps.length > 0 && (
+                      <span className="verdict-gaps">{v.gaps.join('；')}</span>
+                    )}
+                  </li>
+                ))}
+              </ul>
+            )}
+          </section>
+
+          <section className="panel">
             <h3>版本历史（人工返工累积，可回退查看）</h3>
             {report.versions.length === 0 ? (
               <div className="empty-note">暂无版本记录</div>
             ) : (
               <ul className="versions">
-                {report.versions.map((v) => {
-                  const n = Number(/bundle-v(\d+)\.html/.exec(v)?.[1] ?? 0);
-                  return (
-                    <li key={v}>
-                      <a href={artifactUrl(runId, n)} target="_blank" rel="noreferrer">
-                        {v}
-                      </a>
-                      {v === report.versions[report.versions.length - 1] && (
-                        <span className="version-latest">最新</span>
-                      )}
-                    </li>
-                  );
-                })}
+                {[...report.versions].reverse().map((v) => (
+                  <li key={v.file}>
+                    <a href={artifactUrl(runId, v.version)} target="_blank" rel="noreferrer">
+                      {v.file}
+                    </a>
+                    <span className={`version-score ${v.score !== null && v.score < 4 ? 'low' : ''}`}>
+                      {v.score !== null ? `${v.score}/5` : '未评分'}
+                    </span>
+                    {v === report.versions[report.versions.length - 1] && (
+                      <span className="version-latest">最新</span>
+                    )}
+                    {v.gaps.length > 0 && <span className="verdict-gaps">{v.gaps.join('；')}</span>}
+                  </li>
+                ))}
               </ul>
             )}
           </section>

@@ -76,6 +76,7 @@ export function RunDashboard({ runId, requirement, config, onOpenReport, onBack 
   const [instruction, setInstruction] = useState('');
   const [acting, setActing] = useState<'interrupt' | 'resume' | null>(null);
   const [actionMsg, setActionMsg] = useState<string | null>(null);
+  const [lastSoft, setLastSoft] = useState<{ score: number; gaps: string[] } | null>(null);
   const listRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -88,6 +89,12 @@ export function RunDashboard({ runId, requirement, config, onOpenReport, onBack 
         return next.length > MAX_EVENTS ? next.slice(next.length - MAX_EVENTS) : next;
       });
       switch (e.type) {
+        case 'verify.soft.verdict':
+          setLastSoft({
+            score: (e.payload as { score?: number }).score ?? 0,
+            gaps: (e.payload as { gaps?: string[] }).gaps ?? [],
+          });
+          break;
         case 'run.started':
         case 'run.resumed':
           setStatus('running');
@@ -258,6 +265,12 @@ export function RunDashboard({ runId, requirement, config, onOpenReport, onBack 
         {awaiting ? (
           <div className="confirm-row">
             <span className="confirm-title">🛎 产物已生成，等你拍板：</span>
+            {lastSoft && (
+              <span className={`confirm-score ${lastSoft.score < 4 ? 'low' : ''}`}>
+                当前软裁判评分 {lastSoft.score}/5
+                {lastSoft.gaps.length > 0 && `（${lastSoft.gaps.join('；')}）`}
+              </span>
+            )}
             <button
               className="btn btn-primary"
               onClick={handleAccept}

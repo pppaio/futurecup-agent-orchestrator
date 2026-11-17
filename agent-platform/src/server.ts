@@ -86,13 +86,34 @@ function buildReport(runId: string) {
   }
   const hardReports = events.filter((e) => e.type === 'verify.hard.result').map((e) => e.payload as unknown as HardReport);
   const errorCurve = hardReports.map((r) => r.errors.length);
-  const soft = events.find((e) => e.type === 'verify.soft.verdict')?.payload;
+  // 软裁判：取「最新一次」评分（不是第一次）；同时保留完整打分历史
+  const verdicts = events.filter((e) => e.type === 'verify.soft.verdict');
+  const soft = verdicts.length > 0 ? verdicts[verdicts.length - 1].payload : null;
+  const verdict_history = verdicts.map((e) => ({
+    seq: e.seq,
+    score: (e.payload as { score?: number }).score ?? null,
+    gaps: (e.payload as { gaps?: string[] }).gaps ?? [],
+  }));
   const finished = events.find((e) => e.type === 'run.finished');
   const lastHard = hardReports[hardReports.length - 1];
-  // 版本列表（人工返工后累积）
-  let versions: string[] = [];
+  // 版本列表（人工返工后累积）；每个版本关联「打包前最近一次软裁判评分」
+  let versions: { file: string; version: number; score: number | null; gaps: string[] }[] = [];
   try {
-    versions = readdirSync(store.runDir(runId)).filter((f) => /^bundle-v\d+\.html$/.test(f)).sort();
+    const files = readdirSync(store.runDir(runId)).filter((f) => /^bundle-v\d+\.html$/.test(f)).sort();
+    let lastVerdict: { score: number; gaps: string[] } | null = null;
+    for (const e of events) {
+      if (e.type === 'verify.soft.verdict') {
+        const p = e.payload as { score?: number; gaps?: string[] };
+        lastVerdict = { score: p.score ?? 0, gaps: p.gaps ?? [] };
+      }
+      if (e.type === 'artifact.created') {
+        const ver = (e.payload as { bundle?: { version?: number } }).bundle?.version ?? 1;
+        const file = `bundle-v${ver}.html`;
+        if (files.includes(file)) {
+          versions.push({ file, version: ver, score: lastVerdict?.score ?? null, gaps: lastVerdict?.gaps ?? [] });
+        }
+      }
+    }
   } catch {
     /* 目录不存在 */
   }
@@ -103,6 +124,7 @@ function buildReport(runId: string) {
     last_ok: lastHard?.ok ?? null,
     last_errors: lastHard?.errors ?? [],
     soft_report: soft ?? null,
+    verdict_history,
     wall_ms: (finished?.payload as { wall_ms?: number } | undefined)?.wall_ms ?? null,
     verify_count: hardReports.length,
     versions,

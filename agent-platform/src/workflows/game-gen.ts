@@ -26,12 +26,12 @@ export const GAME_GEN_WF: WorkflowDef = {
     { from: 'n5', to: 'n3', when: 'always', loop: { max_iters: 3 } }, // 硬修复循环（看门狗把关）
     { from: 'n3', to: 'n4', when: 'pass' },                       // 通过才打分
     { from: 'n4', to: 'n7', when: 'always' },                     // 质量门控
-    { from: 'n7', to: 'n5', when: 'fail', loop: { max_iters: 2, on_exhaust: 'n6' } }, // 低分返工；耗尽仍打包（带缺陷交付）
+    { from: 'n7', to: 'n5', when: 'fail', loop: { max_iters: 5, on_exhaust: 'n6' } }, // 低分自动返工（自循环至收敛，≤5 轮）；耗尽仍打包（带缺陷交付）
     { from: 'n7', to: 'n6', when: 'pass' },                       // 达标 → 打包
     { from: 'n6', to: 'n9', when: 'always' },                     // 人工确认点
     { from: 'n9', to: 'n8', when: 'fail', loop: { max_iters: 5 } }, // 人工返工：修改者
     { from: 'n8', to: 'n3', when: 'always' },                     // 修改后重新走验证
   ],
-  limits: { max_total_iters: 10, timeout_sec: 900, max_concurrency: 4 },
-  quality: { min_score: 4, max_iters: 2 },
+  limits: { max_total_iters: 20, timeout_sec: 900, max_concurrency: 4 },
+  quality: { min_score: 4, max_iters: 5 },
 };

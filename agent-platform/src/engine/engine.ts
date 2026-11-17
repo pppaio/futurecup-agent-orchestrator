@@ -554,7 +554,10 @@ export class Engine {
     if (soft.score >= minScore) {
       return { pass: true, output: { score: soft.score, min_score: minScore } };
     }
+    // 低分 → 差距压成改进卡片；同时刷新产物摘要，让修复者知道当前版本长什么样
     rs.ports['quality_cards'] = (soft.gaps ?? []).slice(0, 3).map((g) => ({ category: 'render', message: g }));
+    const art = rs.ports['artifact'] as { html?: string } | undefined;
+    if (art?.html) rs.ports['artifact_summary'] = summarizeArtifact(art.html);
     return { pass: false, output: { score: soft.score, min_score: minScore, gaps: soft.gaps } };
   }
 
