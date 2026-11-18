@@ -899,3 +899,20 @@ a.btn {
 .plan-steps { margin: 0; padding-left: 20px; font-size: 13px; color: #cbd5e1; }
 .plan-steps li { margin: 4px 0; }
 .plan-accept { color: #64748b; font-size: 12px; }
+
+/* 历史记录 + 恢复横幅 */
+.resume-banner { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 14px; padding: 10px 16px; background: #3b2f0e; border: 1px solid #fbbf2444; border-radius: 10px; font-size: 13px; color: #fde68a; }
+.history-view { max-width: 1080px; margin: 0 auto; }
+.history-head { display: flex; align-items: baseline; gap: 16px; margin-bottom: 14px; }
+.history-head h2 { margin: 0; }
+.history-table { width: 100%; border-collapse: collapse; font-size: 13px; background: #0e1730; border: 1px solid #1a2440; border-radius: 10px; overflow: hidden; }
+.history-table th, .history-table td { text-align: left; padding: 8px 10px; border-bottom: 1px solid #1a2440; }
+.history-table th { color: #64748b; font-weight: 600; font-size: 12px; }
+.hist-time { color: #64748b; white-space: nowrap; }
+.hist-req { color: #cbd5e1; max-width: 300px; }
+.hist-id { font-size: 11px; color: #22d3ee; }
+.hist-status { font-size: 11px; padding: 2px 8px; border-radius: 10px; background: #1a2440; color: #94a3b8; }
+.hist-done { background: #16324a; color: #4ade80; }
+.hist-failed { background: #3b1519; color: #f87171; }
+.hist-awaiting_human, .hist-paused { background: #3b2f0e; color: #fbbf24; }
+.hist-running { background: #16324a; color: #67e8f9; }

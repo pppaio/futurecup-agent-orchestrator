@@ -101,6 +101,21 @@ export async function getBalance(): Promise<BalanceInfo | null> {
   }
 }
 
+export interface RunHistoryItem {
+  runId: string;
+  requirement: string;
+  workflow: string;
+  status: RunReport['status'];
+  startedAt: number;
+  latestScore: number | null;
+}
+
+export async function getRuns(): Promise<RunHistoryItem[]> {
+  const res = await fetch('/api/runs');
+  if (!res.ok) return [];
+  return (await res.json()) as RunHistoryItem[];
+}
+
 /** 打开 SSE 事件流；后端会先回放历史事件再推增量。 */
 export function openEventStream(
   runId: string,

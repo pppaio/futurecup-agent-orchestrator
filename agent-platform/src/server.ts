@@ -1,5 +1,5 @@
 import express from 'express';
-import { readFileSync, existsSync, readdirSync, writeFileSync } from 'node:fs';
+import { readFileSync, existsSync, readdirSync, writeFileSync, appendFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { EventStore } from './event/store.js';
 import { MultiProviderLLM, providersFromEnv } from './gateway/llm.js';
@@ -33,6 +33,41 @@ function loadUserProviders(): Map<string, ProviderConfig> {
 function persistUserProviders(userProviders: Map<string, ProviderConfig>): void {
   writeFileSync(PROVIDERS_FILE, JSON.stringify([...userProviders.values()], null, 2), 'utf8');
 }
+
+/** 启动时收尾：上次进程若被重启/杀掉，未终态的 run 补一条 run.failed（诚实收尾，避免悬挂）。 */
+function closeOrphanedRuns(): void {
+  const runsRoot = join(process.cwd(), 'runs');
+  let dirs: string[] = [];
+  try {
+    dirs = readdirSync(runsRoot, { withFileTypes: true })
+      .filter((d) => d.isDirectory())
+      .map((d) => d.name);
+  } catch {
+    return;
+  }
+  for (const runId of dirs) {
+    const p = join(runsRoot, runId, 'events.jsonl');
+    if (!existsSync(p)) continue;
+    try {
+      const raw = readFileSync(p, 'utf8');
+      const lines = raw.split('\n').filter((l) => l.trim().length > 0);
+      if (lines.length === 0) continue;
+      const last = JSON.parse(lines[lines.length - 1]) as RunEvent;
+      if (last.type === 'run.finished' || last.type === 'run.failed') continue;
+      const closing: RunEvent = {
+        seq: last.seq + 1,
+        ts: Date.now(),
+        run_id: runId as RunId,
+        type: 'run.failed',
+        payload: { reason: 'server_restarted' },
+      };
+      appendFileSync(p, JSON.stringify(closing) + '\n', 'utf8');
+    } catch {
+      /* 跳过 */
+    }
+  }
+}
+closeOrphanedRuns();
 
 const store = new EventStore('runs');
 // 合并「.env 配置的供应商」+「用户在前端接入的供应商(providers.json)」
@@ -131,7 +166,13 @@ function buildReport(runId: string) {
 }
 
 app.get('/api/health', (_req, res) => {
-  res.json({ ok: true, model: [...providers.keys()].join('+') || 'none', runs: runsOrder.length });
+  let runCount = 0;
+  try {
+    runCount = readdirSync(join(process.cwd(), 'runs')).filter((d) => existsSync(join(process.cwd(), 'runs', d, 'events.jsonl'))).length;
+  } catch {
+    /* 无 runs 目录 */
+  }
+  res.json({ ok: true, model: [...providers.keys()].join('+') || 'none', runs: runCount });
 });
 
 /** 可用供应商列表（不含 key）：{ id, name, models } */
@@ -276,8 +317,62 @@ app.post('/api/runs/:id/resume', (req, res) => {
   }
 });
 
+/** 历史记录：从磁盘扫 runs/ 目录（事件流第一行=需求，末行=终态），服务重启也不丢。 */
 app.get('/api/runs', (_req, res) => {
-  res.json(runsOrder.map((id) => ({ runId: id, report: buildReport(id) })));
+  const list: {
+    runId: string;
+    requirement: string;
+    workflow: string;
+    status: string;
+    startedAt: number;
+    latestScore: number | null;
+  }[] = [];
+  const runsRoot = join(process.cwd(), 'runs');
+  let dirs: string[] = [];
+  try {
+    dirs = readdirSync(runsRoot, { withFileTypes: true })
+      .filter((d) => d.isDirectory() && existsSync(join(runsRoot, d.name, 'events.jsonl')))
+      .map((d) => d.name);
+  } catch {
+    /* 无 runs 目录 */
+  }
+  for (const runId of dirs.slice(0, 200)) {
+    try {
+      const p = join(runsRoot, runId, 'events.jsonl');
+      const raw = readFileSync(p, 'utf8');
+      const lines = raw.split('\n').filter((l) => l.trim().length > 0);
+      if (lines.length === 0) continue;
+      const first = JSON.parse(lines[0]) as RunEvent;
+      const last = JSON.parse(lines[lines.length - 1]) as RunEvent;
+      const startPayload = first.payload as { requirement?: string; workflow?: string };
+      let status = 'running';
+      if (last.type === 'run.finished') status = 'done';
+      else if (last.type === 'run.failed') status = 'failed';
+      else if (last.type === 'run.interrupted') {
+        status = (last.payload as { reason?: string }).reason === 'awaiting_human' ? 'awaiting_human' : 'paused';
+      }
+      let latestScore: number | null = null;
+      for (let i = lines.length - 1; i >= 0; i--) {
+        const e = JSON.parse(lines[i]) as RunEvent;
+        if (e.type === 'verify.soft.verdict') {
+          latestScore = (e.payload as { score?: number }).score ?? null;
+          break;
+        }
+      }
+      list.push({
+        runId,
+        requirement: String(startPayload.requirement ?? ''),
+        workflow: String(startPayload.workflow ?? ''),
+        status,
+        startedAt: first.ts,
+        latestScore,
+      });
+    } catch {
+      /* 单条损坏跳过 */
+    }
+  }
+  list.sort((a, b) => b.startedAt - a.startedAt);
+  res.json(list);
 });
 
 app.get('/api/runs/:id/events', (req, res) => {
