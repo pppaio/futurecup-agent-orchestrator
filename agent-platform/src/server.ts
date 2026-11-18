@@ -2,7 +2,7 @@ import express from 'express';
 import { readFileSync, existsSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { EventStore } from './event/store.js';
-import { DeepSeekLLM, FakeLLM } from './gateway/llm.js';
+import { MultiProviderLLM, FakeLLM, providersFromEnv } from './gateway/llm.js';
 import type { LLMGateway } from './gateway/llm.js';
 import { PlaywrightSandbox } from './sandbox/sandbox.js';
 import { SingleHtmlPackager } from './packager/packager.js';
@@ -20,11 +20,12 @@ try {
 }
 
 const store = new EventStore('runs');
-const key = process.env.DEEPSEEK_API_KEY;
+const providers = providersFromEnv();
+const hasRealProviders = providers.size > 0;
 
 let llm: LLMGateway;
-if (key) {
-  llm = new DeepSeekLLM(key);
+if (hasRealProviders) {
+  llm = new MultiProviderLLM(providers);
 } else {
   llm = new FakeLLM({
     analyst: () =>
@@ -132,7 +133,13 @@ function buildReport(runId: string) {
 }
 
 app.get('/api/health', (_req, res) => {
-  res.json({ ok: true, model: key ? 'deepseek-v4-pro' : 'fake', runs: runsOrder.length });
+  res.json({ ok: true, model: hasRealProviders ? [...providers.keys()].join('+') : 'fake', runs: runsOrder.length });
+});
+
+/** 可用供应商列表（不含 key）：{ id, name, models } */
+app.get('/api/providers', (_req, res) => {
+  const list = llm instanceof MultiProviderLLM ? llm.getProviders() : [];
+  res.json(list);
 });
 
 app.post('/api/runs', (req, res) => {
@@ -141,8 +148,11 @@ app.post('/api/runs', (req, res) => {
     res.status(400).json({ error: 'requirement 不能为空' });
     return;
   }
-  // 每 Agent 的模型/思考强度覆盖：{ analyst: { model: 'deepseek-flash', effort: 'low' }, ... }
-  const config = (req.body?.config ?? {}) as Record<string, { model?: string; effort?: 'low' | 'medium' | 'high' }>;
+  // 每 Agent 的供应商/模型/思考强度覆盖：{ analyst: { provider: 'qwen', model: 'qwen-max', effort: 'low' }, ... }
+  const config = (req.body?.config ?? {}) as Record<
+    string,
+    { provider?: string; model?: string; effort?: 'low' | 'medium' | 'high' }
+  >;
   const runId = engine.start(GAME_GEN_WF, { requirement }, { overrides: config });
   runsOrder.unshift(runId);
   res.json({ runId });
@@ -206,6 +216,6 @@ app.get('/api/runs/:id/artifact', (req, res) => {
 
 app.listen(PORT, () => {
   console.log(`后端已启动: http://localhost:${PORT}`);
-  console.log(`模型: ${key ? 'deepseek-v4-pro' : 'fake'}`);
+  console.log(`模型: ${hasRealProviders ? [...providers.keys()].join('+') : 'fake'}`);
   console.log(`健康检查: http://localhost:${PORT}/api/health`);
 });

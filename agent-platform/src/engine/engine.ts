@@ -32,8 +32,9 @@ export interface EngineOptions {
   humanGate?: boolean;
 }
 
-/** 单次运行的 per-agent 覆盖：换模型 / 调思考强度。 */
+/** 单次运行的 per-agent 覆盖：换供应商 / 换模型 / 调思考强度。 */
 export interface AgentOverride {
+  provider?: string;
   model?: string;
   effort?: 'low' | 'medium' | 'high';
 }
@@ -120,14 +121,18 @@ export class Engine {
     const states = new Map<string, NodeState>();
     for (const n of wf.nodes) states.set(n.id, { node: n, output: undefined, runs: 0 });
 
-    // per-run agent 覆盖：换模型 / 调思考强度
+    // per-run agent 覆盖：换供应商 / 换模型 / 调思考强度
     const agents = new Map(this.opts.agents);
     for (const [id, ov] of Object.entries(startOpts.overrides ?? {})) {
       const base = agents.get(id);
       if (!base) continue;
       agents.set(id, {
         ...base,
-        model: { ...base.model, name: ov.model ?? base.model.name },
+        model: {
+          ...base.model,
+          provider: ov.provider ?? base.model.provider,
+          name: ov.model ?? base.model.name,
+        },
         thinking_effort: ov.effort ?? base.thinking_effort,
       });
     }

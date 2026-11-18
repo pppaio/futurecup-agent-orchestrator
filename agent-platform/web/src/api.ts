@@ -1,4 +1,4 @@
-import type { AgentConfig, HealthInfo, RunEvent, RunReport } from './types';
+import type { AgentConfig, HealthInfo, ProviderInfo, RunEvent, RunReport } from './types';
 
 async function json<T>(res: Response): Promise<T> {
   if (!res.ok) {
@@ -45,6 +45,12 @@ export async function getReport(runId: string): Promise<RunReport> {
 export async function getHealth(): Promise<HealthInfo> {
   const res = await fetch('/api/health');
   return json<HealthInfo>(res);
+}
+
+export async function getProviders(): Promise<ProviderInfo[]> {
+  const res = await fetch('/api/providers');
+  if (!res.ok) return [];
+  return (await res.json()) as ProviderInfo[];
 }
 
 /** 打开 SSE 事件流；后端会先回放历史事件再推增量。 */

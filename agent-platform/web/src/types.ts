@@ -65,13 +65,21 @@ export interface RunReport {
   versions: { file: string; version: number; score: number | null; gaps: string[] }[];
 }
 
-/** 每 Agent 的模型/思考强度覆盖。 */
+/** 每 Agent 的供应商/模型/思考强度覆盖。 */
 export interface AgentConfigItem {
+  provider?: string;
   model?: string;
   effort?: 'low' | 'medium' | 'high';
 }
 
 export type AgentConfig = Record<string, AgentConfigItem>;
+
+/** 可用供应商（不含 key）。 */
+export interface ProviderInfo {
+  id: string;
+  name: string;
+  models: string[];
+}
 
 export interface HealthInfo {
   ok: boolean;

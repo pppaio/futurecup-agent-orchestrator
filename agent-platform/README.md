@@ -15,6 +15,14 @@ npx playwright install chromium   # 首次需下载无头浏览器
 
 # 配置模型（可选，不配则跑 fake LLM）
 cp .env.example .env              # 填入 DEEPSEEK_API_KEY=sk-...
+
+# 接入其它 API 供应商（OpenAI 兼容口径，如通义千问/智谱/月之暗面）
+# .env 追加：
+#   PROVIDER_QWEN_NAME=通义千问
+#   PROVIDER_QWEN_BASE=https://dashscope.aliyuncs.com/compatible-mode/v1
+#   PROVIDER_QWEN_KEY=sk-xxx
+#   PROVIDER_QWEN_MODELS=qwen-max,qwen-plus
+# 配置后，前端「角色配置」面板里每个角色都可以选择任意供应商的模型。
 ```
 
 ## 运行

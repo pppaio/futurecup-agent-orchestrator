@@ -1,6 +1,6 @@
-import { useState } from 'react';
-import { startRun } from '../api';
-import type { AgentConfig, AgentConfigItem, HealthInfo } from '../types';
+import { useEffect, useState } from 'react';
+import { getProviders, startRun } from '../api';
+import type { AgentConfig, AgentConfigItem, HealthInfo, ProviderInfo } from '../types';
 
 interface Props {
   requirement: string;
@@ -17,7 +17,6 @@ const AGENT_META: { id: string; label: string }[] = [
   { id: 'reviser', label: '修改者' },
 ];
 
-const MODELS = ['deepseek-v4-pro', 'deepseek-flash'];
 const EFFORTS: { value: AgentConfigItem['effort']; label: string }[] = [
   { value: 'low', label: '低' },
   { value: 'medium', label: '中' },
@@ -25,28 +24,28 @@ const EFFORTS: { value: AgentConfigItem['effort']; label: string }[] = [
 ];
 
 const DEFAULT_CONFIG: AgentConfig = {
-  analyst: { model: 'deepseek-v4-pro', effort: 'low' },
-  builder: { model: 'deepseek-v4-pro', effort: 'high' },
-  critic: { model: 'deepseek-v4-pro', effort: 'low' },
-  fixer: { model: 'deepseek-v4-pro', effort: 'high' },
-  reviser: { model: 'deepseek-v4-pro', effort: 'high' },
+  analyst: { provider: 'deepseek', model: 'deepseek-v4-pro', effort: 'low' },
+  builder: { provider: 'deepseek', model: 'deepseek-v4-pro', effort: 'high' },
+  critic: { provider: 'deepseek', model: 'deepseek-v4-pro', effort: 'low' },
+  fixer: { provider: 'deepseek', model: 'deepseek-v4-pro', effort: 'high' },
+  reviser: { provider: 'deepseek', model: 'deepseek-v4-pro', effort: 'high' },
 };
 
 function applyPreset(preset: 'balanced' | 'saving' | 'best'): AgentConfig {
-  const set = (effort: AgentConfigItem['effort'], model: string): AgentConfig => ({
-    analyst: { model, effort: 'low' },
-    builder: { model: 'deepseek-v4-pro', effort },
-    critic: { model, effort: 'low' },
-    fixer: { model: 'deepseek-v4-pro', effort },
-    reviser: { model: 'deepseek-v4-pro', effort },
+  const set = (effort: AgentConfigItem['effort'], provider: string, model: string): AgentConfig => ({
+    analyst: { provider, model, effort: 'low' },
+    builder: { provider: 'deepseek', model: 'deepseek-v4-pro', effort },
+    critic: { provider, model, effort: 'low' },
+    fixer: { provider: 'deepseek', model: 'deepseek-v4-pro', effort },
+    reviser: { provider: 'deepseek', model: 'deepseek-v4-pro', effort },
   });
   switch (preset) {
     case 'saving':
-      return set('medium', 'deepseek-flash');
+      return set('medium', 'deepseek', 'deepseek-flash');
     case 'best':
-      return set('high', 'deepseek-v4-pro');
+      return set('high', 'deepseek', 'deepseek-v4-pro');
     default:
-      return set('high', 'deepseek-v4-pro');
+      return set('high', 'deepseek', 'deepseek-v4-pro');
   }
 }
 
@@ -55,6 +54,11 @@ export function TaskConsole({ requirement, setRequirement, onStarted, health }: 
   const [error, setError] = useState<string | null>(null);
   const [showConfig, setShowConfig] = useState(false);
   const [config, setConfig] = useState<AgentConfig>(DEFAULT_CONFIG);
+  const [providers, setProviders] = useState<ProviderInfo[]>([]);
+
+  useEffect(() => {
+    getProviders().then(setProviders).catch(() => setProviders([]));
+  }, []);
 
   async function submit() {
     if (!requirement.trim()) {
@@ -139,21 +143,35 @@ export function TaskConsole({ requirement, setRequirement, onStarted, health }: 
             <tbody>
               {AGENT_META.map((a) => {
                 const item = config[a.id] ?? DEFAULT_CONFIG[a.id];
+                const curProvider = item.provider ?? 'deepseek';
+                const curModels = providers.find((p) => p.id === curProvider)?.models ?? [
+                  'deepseek-v4-pro',
+                  'deepseek-flash',
+                ];
                 return (
                   <tr key={a.id}>
                     <td>{a.label}</td>
                     <td>
                       <select
-                        value={item.model}
-                        onChange={(e) =>
-                          setConfig((c) => ({ ...c, [a.id]: { ...c[a.id], model: e.target.value } }))
-                        }
+                        value={`${curProvider}:${item.model ?? curModels[0]}`}
+                        onChange={(e) => {
+                          const [p, m] = e.target.value.split(':');
+                          setConfig((c) => ({
+                            ...c,
+                            [a.id]: { ...c[a.id], provider: p, model: m },
+                          }));
+                        }}
                       >
-                        {MODELS.map((m) => (
-                          <option key={m} value={m}>
-                            {m}
-                          </option>
-                        ))}
+                        {providers.length === 0 && (
+                          <option value={`deepseek:${item.model}`}>{item.model}</option>
+                        )}
+                        {providers.map((p) =>
+                          p.models.map((m) => (
+                            <option key={`${p.id}:${m}`} value={`${p.id}:${m}`}>
+                              {p.name} · {m}
+                            </option>
+                          )),
+                        )}
                       </select>
                     </td>
                     <td>
@@ -179,7 +197,8 @@ export function TaskConsole({ requirement, setRequirement, onStarted, health }: 
             </tbody>
           </table>
           <p className="config-hint">
-            生成者/修复者/修改者建议保持 v4-pro（代码质量决定成功率）；软裁判/分析师可换 Flash 省钱。
+            生成者/修复者/修改者建议保持强模型（代码质量决定成功率）；软裁判/分析师可换便宜模型省钱。接入更多供应商：在
+            .env 添加 PROVIDER_&lt;ID&gt;_BASE / _KEY / _MODELS（OpenAI 兼容口径，如通义千问/智谱）。
           </p>
         </div>
       )}
