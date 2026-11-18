@@ -31,7 +31,8 @@ export async function runBench(llm: LLMGateway, dataset: BenchItem[] = DATASET):
       humanGate: false, // 批量实验：人工确认点自动接受
     });
     const t0 = Date.now();
-    const runId = engine.start(GAME_GEN_WF, { requirement: item.requirement });
+    // 批量实验只测「硬验证修复循环」：关掉评分返工循环（quality_rounds=0），保持实验口径与成本一致
+    const runId = engine.start(GAME_GEN_WF, { requirement: item.requirement }, { limits: { quality_rounds: 0 } });
     await engine.wait(runId);
     const wallMs = Date.now() - t0;
     const events = store.replay(runId);

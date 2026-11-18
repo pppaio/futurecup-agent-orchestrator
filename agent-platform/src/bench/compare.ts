@@ -75,7 +75,7 @@ export async function runCompare(
         agents: ALL_AGENTS,
         humanGate: false, // 批量实验：歧义不停机
       });
-      const runId = engine.start(s.wf, { requirement: item.requirement });
+      const runId = engine.start(s.wf, { requirement: item.requirement }, { limits: { quality_rounds: 0 } });
       await engine.wait(runId);
       const events = store.replay(runId);
       const verifyEvents = events.filter((e) => e.type === 'verify.hard.result');

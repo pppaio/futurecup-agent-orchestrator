@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
-import { getHealth } from './api';
+import { getBalance, getHealth } from './api';
+import type { BalanceInfo } from './api';
 import type { AgentConfig, HealthInfo } from './types';
 import { TaskConsole } from './components/TaskConsole';
 import { RunDashboard } from './components/RunDashboard';
@@ -13,11 +14,15 @@ export default function App() {
   const [requirement, setRequirement] = useState('');
   const [config, setConfig] = useState<AgentConfig>({});
   const [health, setHealth] = useState<HealthInfo | null>(null);
+  const [balance, setBalance] = useState<BalanceInfo | null>(null);
 
   useEffect(() => {
     getHealth()
       .then(setHealth)
       .catch(() => setHealth(null));
+    getBalance()
+      .then(setBalance)
+      .catch(() => setBalance(null));
   }, []);
 
   function handleStarted(id: string, cfg: AgentConfig) {
@@ -55,6 +60,17 @@ export default function App() {
           <div className="topbar-health">
             <span className={`dot ${health.ok ? 'dot-ok' : 'dot-bad'}`} />
             {health.ok ? '后端在线' : '后端离线'} · {health.model}
+            {balance && (
+              <>
+                {balance.providers
+                  .filter((p) => p.balance !== null)
+                  .map((p) => (
+                    <span key={p.id} className="topbar-balance">
+                      {p.name}余额 <b className="balance-num">¥{p.balance}</b>
+                    </span>
+                  ))}
+              </>
+            )}
           </div>
         )}
       </header>

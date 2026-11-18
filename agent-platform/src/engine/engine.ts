@@ -55,6 +55,7 @@ export interface StartOptions {
     revise_rounds?: number;    // 人工返工循环（默认 5）
     max_total_iters?: number;  // 总轮次上限（默认 20）
     timeout_sec?: number;      // 单节点超时（默认 900）
+    target_score?: number;     // 目标评分（默认 5，满分为止）
   };
 }
 
@@ -150,8 +151,12 @@ export class Engine {
     }
 
     const queue: string[] = [];
-    const hasIncoming = new Set<string>(wf.edges.map((e) => e.to));
-    for (const n of wf.nodes) if (!hasIncoming.has(n.id)) queue.push(n.id);
+    if (wf.entry) {
+      queue.push(wf.entry); // 图含回边（循环）时以显式入口为准
+    } else {
+      const hasIncoming = new Set<string>(wf.edges.map((e) => e.to));
+      for (const n of wf.nodes) if (!hasIncoming.has(n.id)) queue.push(n.id);
+    }
 
     const rs: RunState = {
       wf,
@@ -273,7 +278,11 @@ export class Engine {
         ...(l.timeout_sec !== undefined ? { timeout_sec: l.timeout_sec } : {}),
       },
       quality: wf.quality
-        ? { ...wf.quality, ...(l.quality_rounds !== undefined ? { max_iters: l.quality_rounds } : {}) }
+        ? {
+            ...wf.quality,
+            ...(l.quality_rounds !== undefined ? { max_iters: l.quality_rounds } : {}),
+            ...(l.target_score !== undefined ? { min_score: l.target_score } : {}),
+          }
         : undefined,
     };
   }
@@ -388,11 +397,15 @@ export class Engine {
           run_id: rs.runId,
           workflow_id: rs.wf.id,
           status: finalStatus,
-          model_snapshot: agentIds.map((a) => ({
-            agent_id: a,
-            model: rs.agents.get(a)?.model.name ?? 'unknown',
-            effort: rs.agents.get(a)?.thinking_effort ?? 'unknown',
-          })),
+          model_snapshot: agentIds.map((a) => {
+            const p = rs.agents.get(a);
+            return {
+              agent_id: a,
+              provider: p?.model.provider ?? 'unknown',
+              model: p?.model.name ?? 'unknown',
+              effort: p?.thinking_effort ?? 'unknown',
+            };
+          }),
           error_curve: rs.errorCurve,
           wall_ms: Date.now() - rs.startedAt,
         },
@@ -661,6 +674,16 @@ export class Engine {
       });
     }
 
+    // 评分未满返工：把软裁判的差距抛回分析师重新分析
+    const qualityCards = ports['quality_cards'];
+    if (node.note?.includes('replan') && Array.isArray(qualityCards) && qualityCards.length > 0) {
+      const gaps = qualityCards.map((c) => (c as { message?: string }).message ?? String(c)).join('；');
+      messages.push({
+        role: 'user',
+        content: `[评分未满返工] 上一版被软裁判评为低分，差距如下：${gaps}。请重新分析需求与差距，输出修订后的规格（调整 acceptance / 实现要点，让生成者改出更高分版本）。`,
+      });
+    }
+
     // 人工指令（中断插入）：注入下一个 Agent 的上下文（一次性）
     const instr = ports['human_instruction'];
     if (typeof instr === 'string' && instr.length > 0) {
@@ -669,6 +692,19 @@ export class Engine {
     }
 
     this.emit({ run_id: rs.runId, node_id: node.id, agent_id: profile.id, type: 'agent.message', payload: { role: 'system', text: profile.role_prompt } });
+    // 留痕：本次调用实际使用的供应商/模型/思考档（可直接审计「到底用了哪个模型」）
+    this.emit({
+      run_id: rs.runId,
+      node_id: node.id,
+      agent_id: profile.id,
+      type: 'agent.message',
+      payload: {
+        role: 'meta',
+        provider: profile.model.provider ?? 'deepseek',
+        model: profile.model.name,
+        effort: profile.thinking_effort ?? 'medium',
+      },
+    });
     for (const m of messages.slice(1)) {
       this.emit({ run_id: rs.runId, node_id: node.id, agent_id: profile.id, type: 'agent.message', payload: { role: m.role, text: m.content } });
     }

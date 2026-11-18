@@ -882,3 +882,11 @@ a.btn {
 .limits-row label { display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: #94a3b8; }
 .limits-row input { width: 76px; background: #0d1526; color: #e5e7eb; border: 1px solid #24304d; border-radius: 6px; padding: 5px 8px; }
 .balance-num { color: #4ade80; }
+
+/* 顶栏余额 + 看板配置速览条 */
+.topbar-balance { margin-left: 10px; font-size: 12px; color: #94a3b8; }
+.balance-num { color: #4ade80; }
+.agent-config-strip { display: flex; flex-wrap: wrap; gap: 6px 14px; margin: 10px 0; font-size: 12px; color: #94a3b8; }
+.agent-config-strip .agent-config-id { color: #64748b; margin-right: 4px; }
+.agent-config-strip .agent-config-val { color: #22d3ee; }
+.limits-row select { background: #0d1526; color: #e5e7eb; border: 1px solid #24304d; border-radius: 6px; padding: 5px 8px; }

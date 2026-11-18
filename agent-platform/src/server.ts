@@ -248,6 +248,7 @@ app.post('/api/runs', (req, res) => {
     revise_rounds: num(rawLimits.revise_rounds),
     max_total_iters: num(rawLimits.max_total_iters),
     timeout_sec: num(rawLimits.timeout_sec),
+    target_score: num(rawLimits.target_score),
   };
   // 编排模式：fixed=固定流水线 / auto=自主编排（分析师出计划，引擎逐步编排）
   const autoMode = String(req.body?.mode ?? 'fixed') === 'auto';

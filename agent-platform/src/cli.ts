@@ -249,7 +249,7 @@ async function demoGate(): Promise<void> {
         tasks: [],
       }),
     builder: () => JSON.stringify({ title: '打砖块', html: SAMPLE_GAME_HTML }),
-    critic: () => JSON.stringify({ score: 4, gaps: [] }),
+    critic: () => JSON.stringify({ score: 5, gaps: [] }),
     fixer: () => JSON.stringify({ title: '打砖块', html: SAMPLE_GAME_HTML }),
   });
   const engine = new Engine({

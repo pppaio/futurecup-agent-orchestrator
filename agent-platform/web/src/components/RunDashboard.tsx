@@ -216,22 +216,24 @@ export function RunDashboard({ runId, requirement, config, onOpenReport, onBack 
         </button>
       </div>
 
+      {/* 本次运行的角色模型配置速览（从节点面板移出，放顶部，避免截断） */}
+      <div className="agent-config-strip">
+        {Object.entries(config)
+          .filter(([, v]) => !!v)
+          .map(([id, v]) => (
+            <span key={id} className="agent-config-row">
+              <span className="agent-config-id">{id}</span>
+              <span className="agent-config-val">
+                {v.provider ?? 'deepseek'}:{v.model} · {v.effort === 'low' ? '低' : v.effort === 'high' ? '高' : '中'}
+              </span>
+            </span>
+          ))}
+      </div>
+
       <div className="dash-grid">
         <aside className="panel panel-nodes">
           <h3>节点状态</h3>
           <NodeBar states={nodeStates} />
-          <div className="agent-config-note">
-            {Object.entries(config)
-              .filter(([, v]) => !!v)
-              .map(([id, v]) => (
-                <div key={id} className="agent-config-row">
-                  <span className="agent-config-id">{id}</span>
-                  <span className="agent-config-val">
-                    {v.model} · {v.effort === 'low' ? '低' : v.effort === 'high' ? '高' : '中'}
-                  </span>
-                </div>
-              ))}
-          </div>
         </aside>
 
         <section className="panel panel-events">

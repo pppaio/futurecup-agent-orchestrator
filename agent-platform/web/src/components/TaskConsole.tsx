@@ -1,7 +1,6 @@
 import { useEffect, useState } from 'react';
-import { addProvider, getBalance, getProviders, removeProvider, startRun } from '../api';
+import { addProvider, getProviders, removeProvider, startRun } from '../api';
 import type { AgentConfig, AgentConfigItem, HealthInfo, ProviderInfo } from '../types';
-import type { BalanceInfo } from '../api';
 
 interface Props {
   requirement: string;
@@ -53,22 +52,41 @@ function applyPreset(preset: 'balanced' | 'saving' | 'best'): AgentConfig {
 export function TaskConsole({ requirement, setRequirement, onStarted, health }: Props) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [showConfig, setShowConfig] = useState(false);
   const [config, setConfig] = useState<AgentConfig>(DEFAULT_CONFIG);
   const [providers, setProviders] = useState<ProviderInfo[]>([]);
   const [scheduler, setScheduler] = useState<'off' | 'quality' | 'saving'>('off');
   const [mode, setMode] = useState<'fixed' | 'auto'>('fixed');
-  const [showApiPanel, setShowApiPanel] = useState(false);
   const [apiForm, setApiForm] = useState({ name: '', baseUrl: '', apiKey: '', models: '' });
   const [apiMsg, setApiMsg] = useState<string | null>(null);
-  const [balance, setBalance] = useState<BalanceInfo | null>(null);
-  const [showLimits, setShowLimits] = useState(false);
-  const [limits, setLimits] = useState({ fix_rounds: 3, quality_rounds: 5, revise_rounds: 5, max_total_iters: 20, timeout_sec: 900 });
+  const [limits, setLimits] = useState({
+    fix_rounds: 3,
+    quality_rounds: 3,
+    revise_rounds: 5,
+    max_total_iters: 30,
+    timeout_sec: 900,
+    target_score: 5,
+  });
 
   useEffect(() => {
     getProviders().then(setProviders).catch(() => setProviders([]));
-    getBalance().then(setBalance).catch(() => setBalance(null));
   }, []);
+
+  async function submit() {
+    if (!requirement.trim()) {
+      setError('请先输入需求描述');
+      return;
+    }
+    setBusy(true);
+    setError(null);
+    try {
+      const { runId } = await startRun(requirement.trim(), config, scheduler, limits, mode);
+      onStarted(runId, config);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusy(false);
+    }
+  }
 
   async function submitApi() {
     setApiMsg(null);
@@ -100,23 +118,6 @@ export function TaskConsole({ requirement, setRequirement, onStarted, health }: 
     }
   }
 
-  async function submit() {
-    if (!requirement.trim()) {
-      setError('请先输入需求描述');
-      return;
-    }
-    setBusy(true);
-    setError(null);
-    try {
-      const { runId } = await startRun(requirement.trim(), config, scheduler, limits, mode);
-      onStarted(runId, config);
-    } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
-    } finally {
-      setBusy(false);
-    }
-  }
-
   return (
     <div className="console-view">
       <div className="claim">
@@ -143,258 +144,244 @@ export function TaskConsole({ requirement, setRequirement, onStarted, health }: 
           <button className="btn btn-primary" onClick={submit} disabled={busy}>
             {busy ? '提交中…' : '开始生成'}
           </button>
-          <button className="btn btn-ghost" onClick={() => setShowConfig((s) => !s)}>
-            {showConfig ? '收起角色配置 ▲' : '角色配置（模型/思考强度）▼'}
-          </button>
-          <button className="btn btn-ghost" onClick={() => setShowApiPanel((s) => !s)}>
-            {showApiPanel ? '收起接入 API ▲' : '接入 API / 供应商▼'}
-          </button>
-          <button className="btn btn-ghost" onClick={() => setShowLimits((s) => !s)}>
-            {showLimits ? '收起运行设置 ▲' : '运行设置（轮次上限）▼'}
-          </button>
-          <label className="scheduler-toggle">
-            调度：
-            <select value={scheduler} onChange={(e) => setScheduler(e.target.value as 'off' | 'quality' | 'saving')}>
-              <option value="off">手动指定</option>
-              <option value="quality">智能·质量优先</option>
-              <option value="saving">智能·省流</option>
-            </select>
-          </label>
-          <label className="scheduler-toggle">
-            编排：
-            <select value={mode} onChange={(e) => setMode(e.target.value as 'fixed' | 'auto')}>
-              <option value="fixed">固定流水线</option>
-              <option value="auto">自主编排（分析师拆步骤→引擎自动调度）</option>
-            </select>
-          </label>
           {health && (
             <span className="health-note">
-              后端 {health.ok ? '在线' : '离线'} · 模型{' '}
-              <b>{health.model === 'fake' ? 'fake(演示)' : health.model}</b>
-              {balance && (
-                <>
-                  {' · '}
-                  {balance.providers.map((p) =>
-                    p.balance !== null ? (
-                      <span key={p.id}>
-                        {p.name}余额 <b className="balance-num">¥{p.balance}</b>
-                      </span>
-                    ) : null,
-                  )}
-                </>
-              )}
-              {' · 历史 run '}
-              {health.runs}
+              后端 {health.ok ? '在线' : '离线'} · 模型 <b>{health.model === 'fake' ? 'fake(演示)' : health.model}</b>
             </span>
           )}
         </div>
         {error && <div className="error-box">{error}</div>}
       </div>
 
-      {showConfig && (
-        <div className="console-card config-panel">
-          <div className="config-head">
-            <span className="field-label">每个角色用哪个模型 / 多大思考强度</span>
-            <span className="config-presets">
-              <button className="btn btn-ghost" onClick={() => setConfig(applyPreset('balanced'))}>
-                默认均衡
-              </button>
-              <button className="btn btn-ghost" onClick={() => setConfig(applyPreset('saving'))}>
-                省流（裁判/分析用 Flash）
-              </button>
-              <button className="btn btn-ghost" onClick={() => setConfig(applyPreset('best'))}>
-                全 Pro 最强
-              </button>
-            </span>
-          </div>
-          <table className="config-table">
-            <thead>
-              <tr>
-                <th>角色</th>
-                <th>模型</th>
-                <th>思考强度</th>
-              </tr>
-            </thead>
-            <tbody>
-              {AGENT_META.map((a) => {
-                const item = config[a.id] ?? DEFAULT_CONFIG[a.id];
-                const curProvider = item.provider ?? 'deepseek';
-                const curModels = providers.find((p) => p.id === curProvider)?.models ?? [
-                  'deepseek-v4-pro',
-                  'deepseek-flash',
-                ];
-                return (
-                  <tr key={a.id}>
-                    <td>{a.label}</td>
-                    <td>
-                      <select
-                        value={`${curProvider}:${item.model ?? curModels[0]}`}
-                        onChange={(e) => {
-                          const [p, m] = e.target.value.split(':');
-                          setConfig((c) => ({
-                            ...c,
-                            [a.id]: { ...c[a.id], provider: p, model: m },
-                          }));
-                        }}
-                      >
-                        {providers.length === 0 && (
-                          <option value={`deepseek:${item.model}`}>{item.model}</option>
-                        )}
-                        {providers.map((p) =>
-                          p.models.map((m) => (
-                            <option key={`${p.id}:${m}`} value={`${p.id}:${m}`}>
-                              {p.name} · {m}
-                            </option>
-                          )),
-                        )}
-                      </select>
-                    </td>
-                    <td>
-                      <select
-                        value={item.effort}
-                        onChange={(e) =>
-                          setConfig((c) => ({
-                            ...c,
-                            [a.id]: { ...c[a.id], effort: e.target.value as AgentConfigItem['effort'] },
-                          }))
-                        }
-                      >
-                        {EFFORTS.map((ef) => (
-                          <option key={ef.value} value={ef.value}>
-                            {ef.label}
-                          </option>
-                        ))}
-                      </select>
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-          <p className="config-hint">
-            生成者/修复者/修改者建议保持强模型（代码质量决定成功率）；软裁判/分析师可换便宜模型省钱。接入更多供应商：在下方「接入 API」面板填写，或 .env 加 PROVIDER_&lt;ID&gt;_*。
-          </p>
+      {/* ① 运行设置（常开）：编排/调度/目标评分/轮次上限 */}
+      <div className="console-card config-panel">
+        <div className="config-head">
+          <span className="field-label">运行设置</span>
         </div>
-      )}
-
-      {showLimits && (
-        <div className="console-card config-panel">
-          <div className="config-head">
-            <span className="field-label">运行设置：每次 run 的循环轮次上限（调小 = 省钱，调大 = 更执着）</span>
-          </div>
-          <div className="limits-row">
-            <label>
-              硬修复轮次
-              <input
-                type="number"
-                min={0}
-                max={9}
-                value={limits.fix_rounds}
-                onChange={(e) => setLimits((l) => ({ ...l, fix_rounds: Number(e.target.value) }))}
-              />
-            </label>
-            <label>
-              质量返工轮次
-              <input
-                type="number"
-                min={0}
-                max={9}
-                value={limits.quality_rounds}
-                onChange={(e) => setLimits((l) => ({ ...l, quality_rounds: Number(e.target.value) }))}
-              />
-            </label>
-            <label>
-              人工返工轮次
-              <input
-                type="number"
-                min={0}
-                max={9}
-                value={limits.revise_rounds}
-                onChange={(e) => setLimits((l) => ({ ...l, revise_rounds: Number(e.target.value) }))}
-              />
-            </label>
-            <label>
-              总轮次上限
-              <input
-                type="number"
-                min={1}
-                max={99}
-                value={limits.max_total_iters}
-                onChange={(e) => setLimits((l) => ({ ...l, max_total_iters: Number(e.target.value) }))}
-              />
-            </label>
-            <label>
-              单节点超时(秒)
-              <input
-                type="number"
-                min={60}
-                max={3600}
-                value={limits.timeout_sec}
-                onChange={(e) => setLimits((l) => ({ ...l, timeout_sec: Number(e.target.value) }))}
-              />
-            </label>
-          </div>
-          <p className="config-hint">
-            日常测试省钱配方：质量返工轮次设 0~1。正式演示/录视频再调回 5。
-          </p>
+        <div className="limits-row">
+          <label>
+            编排
+            <select value={mode} onChange={(e) => setMode(e.target.value as 'fixed' | 'auto')}>
+              <option value="fixed">固定流水线</option>
+              <option value="auto">自主编排（分析师拆步骤→引擎自动调度）</option>
+            </select>
+          </label>
+          <label>
+            调度
+            <select value={scheduler} onChange={(e) => setScheduler(e.target.value as 'off' | 'quality' | 'saving')}>
+              <option value="off">手动指定</option>
+              <option value="quality">智能·质量优先</option>
+              <option value="saving">智能·省流</option>
+            </select>
+          </label>
+          <label>
+            目标评分
+            <select
+              value={limits.target_score}
+              onChange={(e) => setLimits((l) => ({ ...l, target_score: Number(e.target.value) }))}
+            >
+              {[3, 4, 5].map((s) => (
+                <option key={s} value={s}>
+                  {s}/5
+                </option>
+              ))}
+            </select>
+          </label>
+          <label>
+            评分返工轮次
+            <input
+              type="number"
+              min={0}
+              max={9}
+              value={limits.quality_rounds}
+              onChange={(e) => setLimits((l) => ({ ...l, quality_rounds: Number(e.target.value) }))}
+            />
+          </label>
+          <label>
+            硬修复轮次
+            <input
+              type="number"
+              min={0}
+              max={9}
+              value={limits.fix_rounds}
+              onChange={(e) => setLimits((l) => ({ ...l, fix_rounds: Number(e.target.value) }))}
+            />
+          </label>
+          <label>
+            人工返工轮次
+            <input
+              type="number"
+              min={0}
+              max={9}
+              value={limits.revise_rounds}
+              onChange={(e) => setLimits((l) => ({ ...l, revise_rounds: Number(e.target.value) }))}
+            />
+          </label>
+          <label>
+            总轮次上限
+            <input
+              type="number"
+              min={1}
+              max={99}
+              value={limits.max_total_iters}
+              onChange={(e) => setLimits((l) => ({ ...l, max_total_iters: Number(e.target.value) }))}
+            />
+          </label>
+          <label>
+            单节点超时(秒)
+            <input
+              type="number"
+              min={60}
+              max={3600}
+              value={limits.timeout_sec}
+              onChange={(e) => setLimits((l) => ({ ...l, timeout_sec: Number(e.target.value) }))}
+            />
+          </label>
         </div>
-      )}
+        <p className="config-hint">
+          评分循环语义：软裁判评分 &lt; 目标评分 → 先把当前版本打包留痕（bundle-vN）→ 问题抛回分析师重新分析 → 生成者改动 →
+          再评分，直到达到目标分或评分返工轮次耗尽。日常测试省钱：目标评分 4、返工轮次 1。
+        </p>
+      </div>
 
-      {showApiPanel && (
-        <div className="console-card config-panel">
-          <div className="config-head">
-            <span className="field-label">接入你自己的 API 供应商（OpenAI 兼容口径：通义/智谱/月之暗面/OpenAI 等）</span>
-          </div>
-          <div className="api-form">
-            <input
-              className="api-input"
-              placeholder="名称（如：通义千问）"
-              value={apiForm.name}
-              onChange={(e) => setApiForm((f) => ({ ...f, name: e.target.value }))}
-            />
-            <input
-              className="api-input api-input-wide"
-              placeholder="Base URL（如 https://dashscope.aliyuncs.com/compatible-mode/v1）"
-              value={apiForm.baseUrl}
-              onChange={(e) => setApiForm((f) => ({ ...f, baseUrl: e.target.value }))}
-            />
-            <input
-              className="api-input"
-              type="password"
-              placeholder="API Key"
-              value={apiForm.apiKey}
-              onChange={(e) => setApiForm((f) => ({ ...f, apiKey: e.target.value }))}
-            />
-            <input
-              className="api-input"
-              placeholder="模型列表，逗号分隔（如 qwen-max,qwen-plus）"
-              value={apiForm.models}
-              onChange={(e) => setApiForm((f) => ({ ...f, models: e.target.value }))}
-            />
-            <button className="btn btn-primary" onClick={submitApi}>
-              保存供应商
+      {/* ② 角色配置（常开） */}
+      <div className="console-card config-panel">
+        <div className="config-head">
+          <span className="field-label">角色配置：每个角色用哪个供应商的哪个模型 / 多大思考强度</span>
+          <span className="config-presets">
+            <button className="btn btn-ghost" onClick={() => setConfig(applyPreset('balanced'))}>
+              默认均衡
             </button>
-          </div>
-          {apiMsg && <div className="api-msg">{apiMsg}</div>}
-          <div className="api-list">
-            {providers.length === 0 && <span className="config-hint">尚未接入任何供应商</span>}
-            {providers.map((p) => (
-              <span key={p.id} className="api-chip">
-                {p.name}（{p.models.join(' / ')}）
-                {p.id !== 'deepseek' && p.id !== 'qwen' && (
-                  <button className="api-del" onClick={() => removeApi(p.id)} title="删除该供应商">
-                    删除
-                  </button>
-                )}
-              </span>
-            ))}
-          </div>
-          <p className="config-hint">
-            保存后，「角色配置」的模型下拉会立即出现该供应商的模型，任意角色可选用。Key 只保存在本地
-            providers.json，不上传。
-          </p>
+            <button className="btn btn-ghost" onClick={() => setConfig(applyPreset('saving'))}>
+              省流（裁判/分析用 Flash）
+            </button>
+            <button className="btn btn-ghost" onClick={() => setConfig(applyPreset('best'))}>
+              全 Pro 最强
+            </button>
+          </span>
         </div>
-      )}
+        <table className="config-table">
+          <thead>
+            <tr>
+              <th>角色</th>
+              <th>模型</th>
+              <th>思考强度</th>
+            </tr>
+          </thead>
+          <tbody>
+            {AGENT_META.map((a) => {
+              const item = config[a.id] ?? DEFAULT_CONFIG[a.id];
+              const curProvider = item.provider ?? 'deepseek';
+              const curModels = providers.find((p) => p.id === curProvider)?.models ?? [
+                'deepseek-v4-pro',
+                'deepseek-flash',
+              ];
+              return (
+                <tr key={a.id}>
+                  <td>{a.label}</td>
+                  <td>
+                    <select
+                      value={`${curProvider}:${item.model ?? curModels[0]}`}
+                      onChange={(e) => {
+                        const [p, m] = e.target.value.split(':');
+                        setConfig((c) => ({
+                          ...c,
+                          [a.id]: { ...c[a.id], provider: p, model: m },
+                        }));
+                      }}
+                    >
+                      {providers.length === 0 && (
+                        <option value={`deepseek:${item.model}`}>{item.model}</option>
+                      )}
+                      {providers.map((p) =>
+                        p.models.map((m) => (
+                          <option key={`${p.id}:${m}`} value={`${p.id}:${m}`}>
+                            {p.name} · {m}
+                          </option>
+                        )),
+                      )}
+                    </select>
+                  </td>
+                  <td>
+                    <select
+                      value={item.effort}
+                      onChange={(e) =>
+                        setConfig((c) => ({
+                          ...c,
+                          [a.id]: { ...c[a.id], effort: e.target.value as AgentConfigItem['effort'] },
+                        }))
+                      }
+                    >
+                      {EFFORTS.map((ef) => (
+                        <option key={ef.value} value={ef.value}>
+                          {ef.label}
+                        </option>
+                      ))}
+                    </select>
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+        <p className="config-hint">
+          生成者/修复者/修改者建议保持强模型（代码质量决定成功率）；软裁判/分析师可换便宜模型省钱。
+        </p>
+      </div>
+
+      {/* ③ 接入 API（常开） */}
+      <div className="console-card config-panel">
+        <div className="config-head">
+          <span className="field-label">接入 API：填你自己的供应商（OpenAI 兼容口径：通义/智谱/月之暗面/OpenAI 等）</span>
+        </div>
+        <div className="api-form">
+          <input
+            className="api-input"
+            placeholder="名称（如：通义千问）"
+            value={apiForm.name}
+            onChange={(e) => setApiForm((f) => ({ ...f, name: e.target.value }))}
+          />
+          <input
+            className="api-input api-input-wide"
+            placeholder="Base URL（如 https://dashscope.aliyuncs.com/compatible-mode/v1）"
+            value={apiForm.baseUrl}
+            onChange={(e) => setApiForm((f) => ({ ...f, baseUrl: e.target.value }))}
+          />
+          <input
+            className="api-input"
+            type="password"
+            placeholder="API Key"
+            value={apiForm.apiKey}
+            onChange={(e) => setApiForm((f) => ({ ...f, apiKey: e.target.value }))}
+          />
+          <input
+            className="api-input"
+            placeholder="模型列表，逗号分隔（如 qwen-max,qwen-plus）"
+            value={apiForm.models}
+            onChange={(e) => setApiForm((f) => ({ ...f, models: e.target.value }))}
+          />
+          <button className="btn btn-primary" onClick={submitApi}>
+            保存供应商
+          </button>
+        </div>
+        {apiMsg && <div className="api-msg">{apiMsg}</div>}
+        <div className="api-list">
+          {providers.length === 0 && <span className="config-hint">尚未接入任何供应商</span>}
+          {providers.map((p) => (
+            <span key={p.id} className="api-chip">
+              {p.name}（{p.models.join(' / ')}）
+              {p.id !== 'deepseek' && p.id !== 'qwen' && (
+                <button className="api-del" onClick={() => removeApi(p.id)} title="删除该供应商">
+                  删除
+                </button>
+              )}
+            </span>
+          ))}
+        </div>
+        <p className="config-hint">
+          保存后，「角色配置」的模型下拉会立即出现该供应商的模型，任意角色可选用。Key 只保存在本地 providers.json，不上传。
+        </p>
+      </div>
     </div>
   );
 }

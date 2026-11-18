@@ -62,6 +62,7 @@ export type WorkflowEdge = z.infer<typeof WorkflowEdgeSchema>;
 export const WorkflowDefSchema = z.object({
   id: z.string(),
   name: z.string(),
+  entry: z.string().optional(), // 入口节点（图含回边成环时显式指定）
   nodes: z.array(WorkflowNodeSchema),
   edges: z.array(WorkflowEdgeSchema),
   limits: z.object({
