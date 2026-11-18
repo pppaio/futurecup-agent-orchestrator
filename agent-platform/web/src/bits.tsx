@@ -35,18 +35,18 @@ export interface NodeMeta {
   hint: string;
 }
 
-// 与后端 workflows/game-gen.ts 的节点 id 一一对应。
+// 与后端 workflows/game-gen.ts 的节点 id 一一对应（按实际流转顺序排列）。
 export const NODES: NodeMeta[] = [
   { id: 'n1', label: '分析师', hint: '拆解需求/返工分析' },
   { id: 'n2', label: '生成者', hint: '产出 HTML' },
   { id: 'n3', label: '硬验证', hint: '沙箱判定' },
   { id: 'n4', label: '软裁判', hint: '评分缺口' },
   { id: 'n7', label: '质量门控', hint: '未满分→版本留痕→回分析师' },
-  { id: 'n5', label: '修复者', hint: '回灌修复' },
+  { id: 'n5', label: '修复者', hint: '硬错误回灌修复' },
   { id: 'n6a', label: '版本留痕', hint: 'bundle-vN' },
   { id: 'n6b', label: '交付打包', hint: '最终版本' },
-  { id: 'n8', label: '修改者', hint: '按指令改版' },
-  { id: 'n9', label: '人工确认', hint: '接受/返工' },
+  { id: 'n9', label: '人工确认', hint: '接受 / 返工' },
+  { id: 'n8', label: '修改者', hint: '按你的指令增量改版' },
 ];
 
 export const NODE_LABEL: Record<string, string> = Object.fromEntries(
