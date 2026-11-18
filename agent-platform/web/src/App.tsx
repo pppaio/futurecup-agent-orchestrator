@@ -13,6 +13,7 @@ export default function App() {
   const [runId, setRunId] = useState<string | null>(null);
   const [requirement, setRequirement] = useState('');
   const [config, setConfig] = useState<AgentConfig>({});
+  const [mode, setMode] = useState<'fixed' | 'auto'>('fixed');
   const [health, setHealth] = useState<HealthInfo | null>(null);
   const [balance, setBalance] = useState<BalanceInfo | null>(null);
 
@@ -25,9 +26,10 @@ export default function App() {
       .catch(() => setBalance(null));
   }, []);
 
-  function handleStarted(id: string, cfg: AgentConfig) {
+  function handleStarted(id: string, cfg: AgentConfig, runMode: 'fixed' | 'auto') {
     setRunId(id);
     setConfig(cfg);
+    setMode(runMode);
     setView('dashboard');
   }
 
@@ -90,6 +92,7 @@ export default function App() {
             runId={runId}
             requirement={requirement}
             config={config}
+            mode={mode}
             onOpenReport={() => setView('report')}
             onBack={() => setView('console')}
           />

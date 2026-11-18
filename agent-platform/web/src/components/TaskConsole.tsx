@@ -5,9 +5,35 @@ import type { AgentConfig, AgentConfigItem, HealthInfo, ProviderInfo } from '../
 interface Props {
   requirement: string;
   setRequirement: (v: string) => void;
-  onStarted: (runId: string, config: AgentConfig) => void;
+  onStarted: (runId: string, config: AgentConfig, mode: 'fixed' | 'auto') => void;
   health: HealthInfo | null;
 }
+
+// 设置持久化：切页/刷新不丢（localStorage）
+function loadLS<T>(key: string, fallback: T): T {
+  try {
+    const raw = localStorage.getItem('ap-' + key);
+    return raw ? (JSON.parse(raw) as T) : fallback;
+  } catch {
+    return fallback;
+  }
+}
+function saveLS(key: string, value: unknown): void {
+  try {
+    localStorage.setItem('ap-' + key, JSON.stringify(value));
+  } catch {
+    /* 忽略 */
+  }
+}
+
+const DEFAULT_LIMITS = {
+  fix_rounds: 3,
+  quality_rounds: 3,
+  revise_rounds: 5,
+  max_total_iters: 30,
+  timeout_sec: 900,
+  target_score: 5,
+};
 
 const AGENT_META: { id: string; label: string }[] = [
   { id: 'analyst', label: '分析师' },
@@ -52,24 +78,22 @@ function applyPreset(preset: 'balanced' | 'saving' | 'best'): AgentConfig {
 export function TaskConsole({ requirement, setRequirement, onStarted, health }: Props) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [config, setConfig] = useState<AgentConfig>(DEFAULT_CONFIG);
+  const [config, setConfig] = useState<AgentConfig>(() => loadLS('config', DEFAULT_CONFIG));
   const [providers, setProviders] = useState<ProviderInfo[]>([]);
-  const [scheduler, setScheduler] = useState<'off' | 'quality' | 'saving'>('off');
-  const [mode, setMode] = useState<'fixed' | 'auto'>('fixed');
+  const [scheduler, setScheduler] = useState<'off' | 'quality' | 'saving'>(() => loadLS('scheduler', 'off'));
+  const [mode, setMode] = useState<'fixed' | 'auto'>(() => loadLS('mode', 'fixed'));
   const [apiForm, setApiForm] = useState({ name: '', baseUrl: '', apiKey: '', models: '' });
   const [apiMsg, setApiMsg] = useState<string | null>(null);
-  const [limits, setLimits] = useState({
-    fix_rounds: 3,
-    quality_rounds: 3,
-    revise_rounds: 5,
-    max_total_iters: 30,
-    timeout_sec: 900,
-    target_score: 5,
-  });
+  const [limits, setLimits] = useState(() => loadLS('limits', DEFAULT_LIMITS));
 
+  // 任何设置变化都持久化（防止运行后切页重置为默认值）
   useEffect(() => {
     getProviders().then(setProviders).catch(() => setProviders([]));
   }, []);
+  useEffect(() => saveLS('config', config), [config]);
+  useEffect(() => saveLS('scheduler', scheduler), [scheduler]);
+  useEffect(() => saveLS('mode', mode), [mode]);
+  useEffect(() => saveLS('limits', limits), [limits]);
 
   async function submit() {
     if (!requirement.trim()) {
@@ -80,7 +104,7 @@ export function TaskConsole({ requirement, setRequirement, onStarted, health }: 
     setError(null);
     try {
       const { runId } = await startRun(requirement.trim(), config, scheduler, limits, mode);
-      onStarted(runId, config);
+      onStarted(runId, config, mode);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     } finally {

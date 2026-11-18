@@ -8,6 +8,7 @@ interface Props {
   runId: string;
   requirement: string;
   config: AgentConfig;
+  mode: 'fixed' | 'auto';
   onOpenReport: () => void;
   onBack: () => void;
 }
@@ -24,6 +25,12 @@ function arrLen(v: unknown): number {
 
 function summarizeEvent(e: RunEvent): string {
   const p = e.payload as Record<string, unknown>;
+  // 自主编排子流程节点：n2#s1-builder → "自主编排 步骤1 · 生成者"
+  const sub = /^n2#s(\d+)-(.+)$/.exec(e.node_id ?? '');
+  if (sub) {
+    const who = sub[2] === 'builder' ? '生成者' : sub[2] === 'verify' ? '硬验证' : '修复者';
+    return `自主编排 步骤${sub[1]} · ${who}`;
+  }
   const node = e.node_id ? NODE_LABEL[e.node_id] ?? e.node_id : '';
   switch (e.type) {
     case 'run.started':
@@ -67,7 +74,7 @@ function summarizeEvent(e: RunEvent): string {
   }
 }
 
-export function RunDashboard({ runId, requirement, config, onOpenReport, onBack }: Props) {
+export function RunDashboard({ runId, requirement, config, mode, onOpenReport, onBack }: Props) {
   const [events, setEvents] = useState<RunEvent[]>([]);
   const [status, setStatus] = useState<RunStatus>('unknown');
   const [nodeStates, setNodeStates] = useState<Record<string, NodeState>>({});
@@ -77,6 +84,7 @@ export function RunDashboard({ runId, requirement, config, onOpenReport, onBack 
   const [acting, setActing] = useState<'interrupt' | 'resume' | null>(null);
   const [actionMsg, setActionMsg] = useState<string | null>(null);
   const [lastSoft, setLastSoft] = useState<{ score: number; gaps: string[] } | null>(null);
+  const [plan, setPlan] = useState<{ step: string; acceptance: string[] }[] | null>(null);
   const listRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -89,6 +97,19 @@ export function RunDashboard({ runId, requirement, config, onOpenReport, onBack 
         return next.length > MAX_EVENTS ? next.slice(next.length - MAX_EVENTS) : next;
       });
       switch (e.type) {
+        case 'agent.message': {
+          const p = e.payload as { role?: string; text?: string };
+          // 捕获分析师输出的开发计划（自主编排）
+          if (e.agent_id === 'analyst' && p.role === 'assistant') {
+            try {
+              const j = JSON.parse(String(p.text ?? '')) as { plan?: { step: string; acceptance: string[] }[] };
+              if (Array.isArray(j.plan) && j.plan.length > 0) setPlan(j.plan);
+            } catch {
+              /* 非 JSON 忽略 */
+            }
+          }
+          break;
+        }
         case 'verify.soft.verdict':
           setLastSoft({
             score: (e.payload as { score?: number }).score ?? 0,
@@ -211,10 +232,28 @@ export function RunDashboard({ runId, requirement, config, onOpenReport, onBack 
           </div>
         </div>
         <StatusBadge status={status} />
+        <span className={`mode-chip ${mode === 'auto' ? 'mode-auto' : ''}`}>
+          {mode === 'auto' ? '🧠 自主编排' : '⚙️ 固定流水线'}
+        </span>
         <button className="btn btn-primary" onClick={onOpenReport}>
           核验报告 →
         </button>
       </div>
+
+      {/* 自主编排：分析师拆出的开发计划 */}
+      {plan && (
+        <div className="plan-card">
+          <h3>🧠 分析师开发计划（引擎按此逐步编排生成-验证-修复）</h3>
+          <ol className="plan-steps">
+            {plan.map((s, i) => (
+              <li key={i}>
+                <b>步骤{i + 1}</b> · {s.step}
+                {s.acceptance.length > 0 && <span className="plan-accept">（验收：{s.acceptance.join('；')}）</span>}
+              </li>
+            ))}
+          </ol>
+        </div>
+      )}
 
       {/* 本次运行的角色模型配置速览（从节点面板移出，放顶部，避免截断） */}
       <div className="agent-config-strip">
