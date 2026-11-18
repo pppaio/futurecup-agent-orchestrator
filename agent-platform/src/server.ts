@@ -153,7 +153,15 @@ app.post('/api/runs', (req, res) => {
     string,
     { provider?: string; model?: string; effort?: 'low' | 'medium' | 'high' }
   >;
-  const runId = engine.start(GAME_GEN_WF, { requirement }, { overrides: config });
+  // 智能调度模式：off=手动 / quality=质量优先(选强模型) / saving=省流(选便宜模型)
+  const mode = String(req.body?.scheduler ?? 'off');
+  const schedulerWeights =
+    mode === 'quality'
+      ? { w_succ: 1, w_speed: 0.05, w_cost: 0.03 }
+      : mode === 'saving'
+        ? { w_succ: 0.3, w_speed: 0.2, w_cost: 0.5 }
+        : undefined;
+  const runId = engine.start(GAME_GEN_WF, { requirement }, { overrides: config, schedulerWeights });
   runsOrder.unshift(runId);
   res.json({ runId });
 });

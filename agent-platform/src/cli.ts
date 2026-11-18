@@ -363,6 +363,45 @@ async function demoConfirm(): Promise<void> {
   if (!ok) process.exitCode = 1;
 }
 
+async function demoScheduler(): Promise<void> {
+  const store = new EventStore('runs');
+  const good = JSON.stringify({ title: '打砖块', html: SAMPLE_GAME_HTML });
+  const fake = new FakeLLM({
+    analyst: () =>
+      JSON.stringify({ goal: '可玩的打砖块', graphic: true, acceptance: ['页面加载无 console 报错', 'canvas 有非空像素'], assumptions: [], ambiguities: [], tasks: [] }),
+    builder: () => good,
+    'builder-flash': () => good,
+    critic: () => JSON.stringify({ score: 5, gaps: [] }),
+    fixer: () => good,
+    reviser: () => good,
+  });
+  const engine = new Engine({
+    llm: fake,
+    sandbox: new PlaywrightSandbox(),
+    packager: new SingleHtmlPackager(),
+    store,
+    agents: ALL_AGENTS,
+    humanGate: false,
+  });
+
+  async function runOnce(label: string, weights: { w_succ: number; w_speed: number; w_cost: number }): Promise<string | null> {
+    const runId = engine.start(GAME_GEN_WF, { requirement: '做个能玩的打砖块' }, { schedulerWeights: weights });
+    await engine.wait(runId);
+    const events = store.replay(runId);
+    const picked = events.find((e) => e.type === 'scheduler.picked');
+    const p = picked?.payload as { picked?: string; candidates?: { agent: string; score: number }[] } | undefined;
+    console.log(`${label}: 选择 [${p?.picked}]  打分 ${(p?.candidates ?? []).map((c) => `${c.agent}=${c.score}`).join(' · ')}`);
+    return p?.picked ?? null;
+  }
+
+  console.log('[demo:scheduler] 智能调度：同一生成节点，按权重在 builder(pro) 与 builder-flash 之间择一');
+  const q = await runOnce('质量优先', { w_succ: 1, w_speed: 0.05, w_cost: 0.03 });
+  const s = await runOnce('省流优先', { w_succ: 0.3, w_speed: 0.2, w_cost: 0.5 });
+  const ok = q === 'builder' && s === 'builder-flash';
+  console.log(ok ? '\n✅ 智能调度打分跑通（质量→pro，省流→flash）' : '\n⚠️ 调度结果不符合预期');
+  if (!ok) process.exitCode = 1;
+}
+
 async function compare(): Promise<void> {
   const key = process.env.DEEPSEEK_API_KEY;
   let llm: LLMGateway;
@@ -449,6 +488,9 @@ async function main(): Promise<void> {
       break;
     case 'demo:confirm':
       await demoConfirm();
+      break;
+    case 'demo:scheduler':
+      await demoScheduler();
       break;
     case 'bench':
       await bench();

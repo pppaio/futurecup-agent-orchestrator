@@ -26,6 +26,11 @@ export const AgentProfileSchema = z.object({
   memory: z.object({ scope: z.literal('run'), retrieve_top_k: z.number().default(4) }).default({ scope: 'run', retrieve_top_k: 4 }),
   output_schema: z.string(),
   io: z.object({ inputs: z.array(z.string()), outputs: z.array(z.string()) }),
+  metrics: z.object({
+    success_rate: z.number().min(0).max(1).default(0.9),
+    avg_latency_ms: z.number().default(1000),
+    cost_tier: z.number().default(1), // 相对成本档位：1 便宜 ~ 3 贵
+  }).optional(),
 });
 export type AgentProfile = z.infer<typeof AgentProfileSchema>;
 
@@ -40,6 +45,7 @@ export const WorkflowNodeSchema = z.object({
   inputs: z.array(z.string()).optional(),
   outputs: z.array(z.string()).optional(),
   note: z.string().optional(),
+  candidates: z.array(z.string()).optional(), // 智能调度：多个候选 Agent，按打分择一
 });
 export type WorkflowNode = z.infer<typeof WorkflowNodeSchema>;
 
@@ -66,6 +72,11 @@ export const WorkflowDefSchema = z.object({
     min_score: z.number().default(4),
     max_iters: z.number().default(2),
   }).optional(),
+  scheduler: z.object({
+    w_succ: z.number().default(1),
+    w_speed: z.number().default(0.05),
+    w_cost: z.number().default(0.03),
+  }).optional(),
 });
 export type WorkflowDef = z.infer<typeof WorkflowDefSchema>;
 
@@ -80,6 +91,7 @@ export type EventType =
   | 'loop.iteration'
   | 'run.interrupted' | 'run.resumed'
   | 'human.instruction'
+  | 'scheduler.picked'
   | 'error';
 
 export interface RunEvent {

@@ -10,7 +10,7 @@ export const GAME_GEN_WF: WorkflowDef = {
   name: '小游戏生成闭环',
   nodes: [
     { id: 'n1', type: 'agent', agent: 'analyst', inputs: ['req'], outputs: ['spec'] },
-    { id: 'n2', type: 'agent', agent: 'builder', inputs: ['spec'], outputs: ['artifact'] },
+    { id: 'n2', type: 'agent', agent: 'builder', candidates: ['builder', 'builder-flash'], inputs: ['spec'], outputs: ['artifact'] },
     { id: 'n3', type: 'verify', verifier: 'hard-sandbox', inputs: ['artifact', 'spec'], outputs: ['hard_report'] },
     { id: 'n4', type: 'agent', agent: 'critic', inputs: ['artifact', 'spec'], outputs: ['soft_report'] },
     { id: 'n7', type: 'gate', gate: 'quality', inputs: ['soft_report'], outputs: ['gate_result'] },

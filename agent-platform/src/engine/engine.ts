@@ -42,10 +42,12 @@ export interface AgentOverride {
 export interface StartOptions {
   /** 初始端口值（如修改流程的既有产物/规格/指令）。 */
   seed?: Record<string, unknown>;
-  /** 每 Agent 的模型/思考强度覆盖。 */
+  /** 每 Agent 的供应商/模型/思考强度覆盖。 */
   overrides?: Record<string, AgentOverride>;
   /** 复用已有 run 目录（修改流程：版本号在同一目录递增）。 */
   runDirOverride?: string;
+  /** 智能调度权重覆盖（省流模式调高 w_cost / 调低 w_succ）。 */
+  schedulerWeights?: { w_succ: number; w_speed: number; w_cost: number };
 }
 
 interface NodeState {
@@ -76,6 +78,7 @@ interface RunState {
   interruptRequested: boolean;
   pendingHumanPrompt?: string;
   pendingHumanNode?: string;
+  schedulerWeights?: { w_succ: number; w_speed: number; w_cost: number };
   waiters: (() => void)[];
 }
 
@@ -158,6 +161,7 @@ export class Engine {
       paused: false,
       finished: false,
       interruptRequested: false,
+      schedulerWeights: startOpts.schedulerWeights,
       waiters: [],
     };
     this.runs.set(runId, rs);
@@ -388,6 +392,43 @@ export class Engine {
   }
 
   /**
+   * 智能调度：节点声明 candidates 时，按打分择一。
+   * score = w_succ·成功率 + w_speed·速度 + w_cost·便宜度（每项归一化到 0~1）。
+   * 默认质量优先选强模型；省流模式（调低 w_succ、调高 w_cost）选便宜模型。
+   */
+  private pickProfile(rs: RunState, node: WorkflowNode): AgentProfile {
+    // 智能调度只在「调度权重被指定」时启用；否则尊重手动指定/默认角色
+    const useScheduler = !!rs.schedulerWeights && !!node.candidates && node.candidates.length > 1;
+    if (!useScheduler) {
+      const profile = rs.agents.get(node.agent ?? '');
+      if (!profile) throw new Error(`未找到 Agent '${node.agent}'`);
+      return profile;
+    }
+    const w = rs.schedulerWeights!;
+    const scored = (node.candidates ?? []).map((id) => {
+      const p = rs.agents.get(id);
+      if (!p) throw new Error(`候选 Agent '${id}' 未找到`);
+      const m = p.metrics ?? { success_rate: 0.9, avg_latency_ms: 1000, cost_tier: 1 };
+      const speed = Math.max(0, 1 - m.avg_latency_ms / 600_000);
+      const cheap = Math.max(0, 1 - m.cost_tier / 3);
+      const score = w.w_succ * m.success_rate + w.w_speed * speed + w.w_cost * cheap;
+      return { id, profile: p, score };
+    });
+    scored.sort((a, b) => b.score - a.score);
+    this.emit({
+      run_id: rs.runId,
+      node_id: node.id,
+      type: 'scheduler.picked',
+      payload: {
+        candidates: scored.map((s) => ({ agent: s.id, score: Number(s.score.toFixed(3)) })),
+        picked: scored[0].id,
+        weights: w,
+      },
+    });
+    return scored[0].profile;
+  }
+
+  /**
    * 单节点 Worker：执行与主循环解耦（R3 状态剥离）。
    * R2 超时熔断：节点超过 10 分钟未完成 → 强制判失败。
    * human 节点：批量模式自动接受；交互模式暂停等人工决定。
@@ -471,8 +512,7 @@ export class Engine {
   }
 
   private async executeAgent(rs: RunState, node: WorkflowNode): Promise<NodeResult> {
-    const profile = rs.agents.get(node.agent ?? '');
-    if (!profile) throw new Error(`未找到 Agent '${node.agent}'`);
+    const profile = this.pickProfile(rs, node);
     const ports = rs.ports;
 
     const inputs = this.readInputs(node, ports);

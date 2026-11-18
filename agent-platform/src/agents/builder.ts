@@ -26,6 +26,8 @@ export const BUILDER_PROFILE: AgentProfile = {
   memory: { scope: 'run', retrieve_top_k: 4 },
   output_schema: 'HtmlArtifact',
   io: { inputs: ['spec'], outputs: ['artifact'] },
+  // 调度打分依据（pro 版：成功率来自 bench 实测 19/20）
+  metrics: { success_rate: 0.95, avg_latency_ms: 203000, cost_tier: 3 },
 };
 
 // 供 fake LLM 复用（保持导出，避免死代码告警）

@@ -14,11 +14,15 @@ async function json<T>(res: Response): Promise<T> {
   return (await res.json()) as T;
 }
 
-export async function startRun(requirement: string, config?: AgentConfig): Promise<{ runId: string }> {
+export async function startRun(
+  requirement: string,
+  config?: AgentConfig,
+  scheduler?: 'off' | 'quality' | 'saving',
+): Promise<{ runId: string }> {
   const res = await fetch('/api/runs', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ requirement, config }),
+    body: JSON.stringify({ requirement, config, scheduler }),
   });
   return json<{ runId: string }>(res);
 }

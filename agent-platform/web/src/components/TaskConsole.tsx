@@ -55,6 +55,7 @@ export function TaskConsole({ requirement, setRequirement, onStarted, health }: 
   const [showConfig, setShowConfig] = useState(false);
   const [config, setConfig] = useState<AgentConfig>(DEFAULT_CONFIG);
   const [providers, setProviders] = useState<ProviderInfo[]>([]);
+  const [scheduler, setScheduler] = useState<'off' | 'quality' | 'saving'>('off');
 
   useEffect(() => {
     getProviders().then(setProviders).catch(() => setProviders([]));
@@ -68,7 +69,7 @@ export function TaskConsole({ requirement, setRequirement, onStarted, health }: 
     setBusy(true);
     setError(null);
     try {
-      const { runId } = await startRun(requirement.trim(), config);
+      const { runId } = await startRun(requirement.trim(), config, scheduler);
       onStarted(runId, config);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
@@ -106,6 +107,14 @@ export function TaskConsole({ requirement, setRequirement, onStarted, health }: 
           <button className="btn btn-ghost" onClick={() => setShowConfig((s) => !s)}>
             {showConfig ? '收起角色配置 ▲' : '角色配置（模型/思考强度）▼'}
           </button>
+          <label className="scheduler-toggle">
+            调度：
+            <select value={scheduler} onChange={(e) => setScheduler(e.target.value as 'off' | 'quality' | 'saving')}>
+              <option value="off">手动指定</option>
+              <option value="quality">智能·质量优先</option>
+              <option value="saving">智能·省流</option>
+            </select>
+          </label>
           {health && (
             <span className="health-note">
               后端 {health.ok ? '在线' : '离线'} · 模型{' '}
