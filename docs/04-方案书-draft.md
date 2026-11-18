@@ -106,7 +106,7 @@
 
 工作流用 JSON 描述为一个有向无环图，节点支持 `agent / verify / packager / human / gate / subflow` 六类，边支持顺序、并行分支（parallel）、条件（when: always/pass/fail）、循环（回边 + loop.max_iters + 超限兜底 on_exhaust）、子工作流嵌套。**循环不在 DAG 上做特殊处理**：回边在运行时等价于「该节点重新入队」，靠 loop 计数与全局 max_total_iters 双重兜底——既保留 DAG 的静态校验能力，又支持迭代。
 
-本平台主工作流 `game-gen-v2`（小游戏生成闭环）的拓扑为：analyst → builder → hard-sandbox 硬验证（失败则 fixer 回灌修复，≤3 轮）→ 通过后 critic 软裁判打分 → **质量门控（gate，确定性代码：低于 4 分自动把差距压成改进卡片回炉 fixer，≤2 轮，耗尽仍打包带缺陷交付）** → 打包（版本化）→ **人工确认点（human：暂停，可「接受交付」或「输入修改指令返工」——修改者 reviser 拿到完整旧产物 + 指令改版，重新走验证闭环，≤5 轮，历史版本 bundle-vN 可回退）**。
+本平台主工作流 `game-gen-v3`（小游戏生成闭环）的拓扑为：analyst → builder → hard-sandbox 硬验证（失败则 fixer 回灌修复，≤3 轮）→ 通过后 critic 软裁判打分 → **质量门控（gate，确定性代码）**：**评分未达目标分（默认 5）→ 先把当前版本打包留痕（bundle-vN，每次未满分的尝试都可追溯）→ 差距抛回分析师重新分析 → 生成者改动 → 再验证 → 再评分**，循环直到满分或预设轮次耗尽（轮次耗尽仍打包带缺陷交付）→ 最终打包 → **人工确认点（接受 / 输入修改指令返工，修改者 reviser 增量改版，历史版本可回退）**。
 
 ### 3.4 控制面确定性（红线 R1 / H6）
 
