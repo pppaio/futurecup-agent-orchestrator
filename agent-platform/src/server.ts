@@ -1,16 +1,14 @@
 import express from 'express';
-import { readFileSync, existsSync, readdirSync } from 'node:fs';
+import { readFileSync, existsSync, readdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { EventStore } from './event/store.js';
-import { MultiProviderLLM, FakeLLM, providersFromEnv } from './gateway/llm.js';
-import type { LLMGateway } from './gateway/llm.js';
+import { MultiProviderLLM, providersFromEnv } from './gateway/llm.js';
+import type { ProviderConfig } from './gateway/llm.js';
 import { PlaywrightSandbox } from './sandbox/sandbox.js';
 import { SingleHtmlPackager } from './packager/packager.js';
 import { Engine } from './engine/engine.js';
 import { ALL_AGENTS } from './agents/profiles.js';
 import { GAME_GEN_WF } from './workflows/game-gen.js';
-import { SAMPLE_BROKEN_HTML } from './agents/sample-broken.js';
-import { SAMPLE_GAME_HTML } from './agents/sample-game.js';
 import type { HardReport, RunEvent, RunId } from './types.js';
 
 try {
@@ -19,30 +17,29 @@ try {
   /* 忽略 */
 }
 
-const store = new EventStore('runs');
-const providers = providersFromEnv();
-const hasRealProviders = providers.size > 0;
-
-let llm: LLMGateway;
-if (hasRealProviders) {
-  llm = new MultiProviderLLM(providers);
-} else {
-  llm = new FakeLLM({
-    analyst: () =>
-      JSON.stringify({
-        goal: '可玩的打砖块',
-        graphic: true,
-        acceptance: ['页面加载无 console 报错', 'canvas 渲染非空', '球拍可控制'],
-        assumptions: ['单人、无存档'],
-        ambiguities: [],
-        tasks: [],
-      }),
-    builder: () => JSON.stringify({ title: 'broken', html: SAMPLE_BROKEN_HTML }),
-    critic: () => JSON.stringify({ score: 2, gaps: ['无法运行'] }),
-    fixer: () => JSON.stringify({ title: '打砖块', html: SAMPLE_GAME_HTML }),
-    reviser: () => JSON.stringify({ title: '打砖块', html: SAMPLE_GAME_HTML }),
-  });
+// 用户在前端「接入 API」面板里添加的供应商（持久化到 providers.json，不进 git）
+const PROVIDERS_FILE = join(process.cwd(), 'providers.json');
+function loadUserProviders(): Map<string, ProviderConfig> {
+  const map = new Map<string, ProviderConfig>();
+  try {
+    const list = JSON.parse(readFileSync(PROVIDERS_FILE, 'utf8')) as ProviderConfig[];
+    for (const p of list) map.set(p.id, p);
+  } catch {
+    /* 文件不存在或损坏则忽略 */
+  }
+  return map;
 }
+function persistUserProviders(userProviders: Map<string, ProviderConfig>): void {
+  writeFileSync(PROVIDERS_FILE, JSON.stringify([...userProviders.values()], null, 2), 'utf8');
+}
+
+const store = new EventStore('runs');
+// 合并「.env 配置的供应商」+「用户在前端接入的供应商(providers.json)」
+const providers = providersFromEnv();
+const userProviders = loadUserProviders();
+for (const [id, p] of userProviders) providers.set(id, p);
+
+const llm = new MultiProviderLLM(providers);
 
 const engine = new Engine({
   llm,
@@ -133,13 +130,55 @@ function buildReport(runId: string) {
 }
 
 app.get('/api/health', (_req, res) => {
-  res.json({ ok: true, model: hasRealProviders ? [...providers.keys()].join('+') : 'fake', runs: runsOrder.length });
+  res.json({ ok: true, model: [...providers.keys()].join('+') || 'none', runs: runsOrder.length });
 });
 
 /** 可用供应商列表（不含 key）：{ id, name, models } */
 app.get('/api/providers', (_req, res) => {
-  const list = llm instanceof MultiProviderLLM ? llm.getProviders() : [];
-  res.json(list);
+  res.json(llm.getProviders());
+});
+
+/** 接入/更新一个供应商（用户在前端填 name/baseUrl/key/models）。key 不回传。 */
+app.post('/api/providers', (req, res) => {
+  const name = String(req.body?.name ?? '').trim();
+  const baseUrl = String(req.body?.baseUrl ?? '').trim();
+  const apiKey = String(req.body?.apiKey ?? '').trim();
+  const models = Array.isArray(req.body?.models)
+    ? req.body.models.map((m: unknown) => String(m).trim()).filter(Boolean)
+    : String(req.body?.models ?? '').split(',').map((s) => s.trim()).filter(Boolean);
+  if (!name || !baseUrl || !apiKey) {
+    res.status(400).json({ error: '名称 / Base URL / API Key 均不能为空' });
+    return;
+  }
+  const slug = name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+  // 中文/非 ASCII 名称会退化为空，用随机后缀保证 id 唯一且不冲突
+  const id = slug || `custom-${Math.random().toString(36).slice(2, 6)}`;
+  const config: ProviderConfig = {
+    id,
+    name,
+    baseUrl: baseUrl.replace(/\/+$/, ''),
+    apiKey,
+    models,
+    supportsReasoningEffort: false,
+    supportsResponseFormat: true,
+  };
+  llm.addProvider(config);
+  userProviders.set(id, config);
+  persistUserProviders(userProviders);
+  res.json({ ok: true, provider: { id, name, models } });
+});
+
+/** 删除一个用户接入的供应商（内置 deepseek 等 .env 配置的不删）。 */
+app.delete('/api/providers/:id', (req, res) => {
+  const id = req.params.id;
+  if (!userProviders.has(id)) {
+    res.status(400).json({ error: '只能删除通过「接入 API」面板添加的供应商' });
+    return;
+  }
+  llm.removeProvider(id);
+  userProviders.delete(id);
+  persistUserProviders(userProviders);
+  res.json({ ok: true });
 });
 
 app.post('/api/runs', (req, res) => {
@@ -224,6 +263,6 @@ app.get('/api/runs/:id/artifact', (req, res) => {
 
 app.listen(PORT, () => {
   console.log(`后端已启动: http://localhost:${PORT}`);
-  console.log(`模型: ${hasRealProviders ? [...providers.keys()].join('+') : 'fake'}`);
+  console.log(`模型: ${[...providers.keys()].join('+') || 'none（可在界面「接入 API」添加）'}`);
   console.log(`健康检查: http://localhost:${PORT}/api/health`);
 });

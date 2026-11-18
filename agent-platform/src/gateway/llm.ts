@@ -74,6 +74,15 @@ export class MultiProviderLLM implements LLMGateway {
     return [...this.providers.values()].map((p) => ({ id: p.id, name: p.name, models: p.models }));
   }
 
+  /** 运行时增/改一个供应商（用户在前端「接入 API」面板里填的）。 */
+  addProvider(config: ProviderConfig): void {
+    this.providers.set(config.id, config);
+  }
+
+  removeProvider(id: string): void {
+    this.providers.delete(id);
+  }
+
   async complete(opts: { agent: AgentProfile; messages: LLMMessage[]; json?: boolean }): Promise<LLMResult> {
     const providerId = opts.agent.model.provider ?? 'deepseek';
     const provider = this.providers.get(providerId);

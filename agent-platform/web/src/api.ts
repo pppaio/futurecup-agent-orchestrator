@@ -57,6 +57,25 @@ export async function getProviders(): Promise<ProviderInfo[]> {
   return (await res.json()) as ProviderInfo[];
 }
 
+export async function addProvider(input: {
+  name: string;
+  baseUrl: string;
+  apiKey: string;
+  models: string[];
+}): Promise<ProviderInfo> {
+  const res = await fetch('/api/providers', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(input),
+  });
+  return json<ProviderInfo>(res);
+}
+
+export async function removeProvider(id: string): Promise<{ ok: boolean }> {
+  const res = await fetch(`/api/providers/${id}`, { method: 'DELETE' });
+  return json<{ ok: boolean }>(res);
+}
+
 /** 打开 SSE 事件流；后端会先回放历史事件再推增量。 */
 export function openEventStream(
   runId: string,

@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { getProviders, startRun } from '../api';
+import { addProvider, getProviders, removeProvider, startRun } from '../api';
 import type { AgentConfig, AgentConfigItem, HealthInfo, ProviderInfo } from '../types';
 
 interface Props {
@@ -56,10 +56,43 @@ export function TaskConsole({ requirement, setRequirement, onStarted, health }: 
   const [config, setConfig] = useState<AgentConfig>(DEFAULT_CONFIG);
   const [providers, setProviders] = useState<ProviderInfo[]>([]);
   const [scheduler, setScheduler] = useState<'off' | 'quality' | 'saving'>('off');
+  const [showApiPanel, setShowApiPanel] = useState(false);
+  const [apiForm, setApiForm] = useState({ name: '', baseUrl: '', apiKey: '', models: '' });
+  const [apiMsg, setApiMsg] = useState<string | null>(null);
 
   useEffect(() => {
     getProviders().then(setProviders).catch(() => setProviders([]));
   }, []);
+
+  async function submitApi() {
+    setApiMsg(null);
+    if (!apiForm.name.trim() || !apiForm.baseUrl.trim() || !apiForm.apiKey.trim()) {
+      setApiMsg('名称 / Base URL / API Key 不能为空');
+      return;
+    }
+    try {
+      await addProvider({
+        name: apiForm.name.trim(),
+        baseUrl: apiForm.baseUrl.trim(),
+        apiKey: apiForm.apiKey.trim(),
+        models: apiForm.models.split(',').map((s) => s.trim()).filter(Boolean),
+      });
+      setApiMsg(`已接入「${apiForm.name.trim()}」`);
+      setApiForm({ name: '', baseUrl: '', apiKey: '', models: '' });
+      setProviders(await getProviders());
+    } catch (e) {
+      setApiMsg(e instanceof Error ? e.message : String(e));
+    }
+  }
+
+  async function removeApi(id: string) {
+    try {
+      await removeProvider(id);
+      setProviders(await getProviders());
+    } catch (e) {
+      setApiMsg(e instanceof Error ? e.message : String(e));
+    }
+  }
 
   async function submit() {
     if (!requirement.trim()) {
@@ -106,6 +139,9 @@ export function TaskConsole({ requirement, setRequirement, onStarted, health }: 
           </button>
           <button className="btn btn-ghost" onClick={() => setShowConfig((s) => !s)}>
             {showConfig ? '收起角色配置 ▲' : '角色配置（模型/思考强度）▼'}
+          </button>
+          <button className="btn btn-ghost" onClick={() => setShowApiPanel((s) => !s)}>
+            {showApiPanel ? '收起接入 API ▲' : '接入 API / 供应商▼'}
           </button>
           <label className="scheduler-toggle">
             调度：
@@ -206,8 +242,63 @@ export function TaskConsole({ requirement, setRequirement, onStarted, health }: 
             </tbody>
           </table>
           <p className="config-hint">
-            生成者/修复者/修改者建议保持强模型（代码质量决定成功率）；软裁判/分析师可换便宜模型省钱。接入更多供应商：在
-            .env 添加 PROVIDER_&lt;ID&gt;_BASE / _KEY / _MODELS（OpenAI 兼容口径，如通义千问/智谱）。
+            生成者/修复者/修改者建议保持强模型（代码质量决定成功率）；软裁判/分析师可换便宜模型省钱。接入更多供应商：在下方「接入 API」面板填写，或 .env 加 PROVIDER_&lt;ID&gt;_*。
+          </p>
+        </div>
+      )}
+
+      {showApiPanel && (
+        <div className="console-card config-panel">
+          <div className="config-head">
+            <span className="field-label">接入你自己的 API 供应商（OpenAI 兼容口径：通义/智谱/月之暗面/OpenAI 等）</span>
+          </div>
+          <div className="api-form">
+            <input
+              className="api-input"
+              placeholder="名称（如：通义千问）"
+              value={apiForm.name}
+              onChange={(e) => setApiForm((f) => ({ ...f, name: e.target.value }))}
+            />
+            <input
+              className="api-input api-input-wide"
+              placeholder="Base URL（如 https://dashscope.aliyuncs.com/compatible-mode/v1）"
+              value={apiForm.baseUrl}
+              onChange={(e) => setApiForm((f) => ({ ...f, baseUrl: e.target.value }))}
+            />
+            <input
+              className="api-input"
+              type="password"
+              placeholder="API Key"
+              value={apiForm.apiKey}
+              onChange={(e) => setApiForm((f) => ({ ...f, apiKey: e.target.value }))}
+            />
+            <input
+              className="api-input"
+              placeholder="模型列表，逗号分隔（如 qwen-max,qwen-plus）"
+              value={apiForm.models}
+              onChange={(e) => setApiForm((f) => ({ ...f, models: e.target.value }))}
+            />
+            <button className="btn btn-primary" onClick={submitApi}>
+              保存供应商
+            </button>
+          </div>
+          {apiMsg && <div className="api-msg">{apiMsg}</div>}
+          <div className="api-list">
+            {providers.length === 0 && <span className="config-hint">尚未接入任何供应商</span>}
+            {providers.map((p) => (
+              <span key={p.id} className="api-chip">
+                {p.name}（{p.models.join(' / ')}）
+                {p.id !== 'deepseek' && p.id !== 'qwen' && (
+                  <button className="api-del" onClick={() => removeApi(p.id)} title="删除">
+                    ✕
+                  </button>
+                )}
+              </span>
+            ))}
+          </div>
+          <p className="config-hint">
+            保存后，「角色配置」的模型下拉会立即出现该供应商的模型，任意角色可选用。Key 只保存在本地
+            providers.json，不上传。
           </p>
         </div>
       )}
