@@ -585,7 +585,12 @@ export class Engine {
       payload: { role: 'system', text: `自主编排：分析师拆出 ${plan.length} 个开发步骤，引擎逐步编排「生成→验证→修复」` },
     });
 
-    let artifact: { title?: string; html?: string } = { title: '', html: '' };
+    let artifact: { title?: string; html?: string } = (rs.ports['artifact'] as { title?: string; html?: string } | undefined) ?? {
+      title: '',
+      html: '',
+    };
+    // 返工轮：以上一版为起点增量完善
+    if (artifact.html) rs.ports['artifact_summary'] = summarizeArtifact(artifact.html);
     for (let i = 0; i < plan.length; i++) {
       const step = plan[i];
       const tag = `${node.id}#s${i + 1}`;
@@ -674,13 +679,19 @@ export class Engine {
       });
     }
 
-    // 评分未满返工：把软裁判的差距抛回分析师重新分析
+    // 评分未满返工：把软裁判的差距 + 历史教训抛回分析师，要求读代码给针对性优化方案（增量，不重做）
     const qualityCards = ports['quality_cards'];
     if (node.note?.includes('replan') && Array.isArray(qualityCards) && qualityCards.length > 0) {
       const gaps = qualityCards.map((c) => (c as { message?: string }).message ?? String(c)).join('；');
+      const mem = ports['run_memory'];
+      const memText = Array.isArray(mem) && mem.length > 0 ? JSON.stringify(mem) : '（无历史）';
       messages.push({
         role: 'user',
-        content: `[评分未满返工] 上一版被软裁判评为低分，差距如下：${gaps}。请重新分析需求与差距，输出修订后的规格（调整 acceptance / 实现要点，让生成者改出更高分版本）。`,
+        content:
+          `[评分未满返工] 上一版被软裁判评为低分，差距：${gaps}。历史返工记录：${memText}。` +
+          '输入中已附上一版完整代码（artifact）与上一版规格（spec）。请你：' +
+          '① 结合用户原始需求与裁判差距，重新分析并输出修订后的规格；' +
+          '② 在 changes 中给出 2~5 条具体修改要求（指明改哪个模块/哪个行为），让生成者基于上一版做增量修改，不要推倒重做。',
       });
     }
 
@@ -774,8 +785,11 @@ export class Engine {
     if (soft.score >= minScore) {
       return { pass: true, output: { score: soft.score, min_score: minScore } };
     }
-    // 低分 → 差距压成改进卡片；同时刷新产物摘要，让修复者知道当前版本长什么样
+    // 低分 → 差距压成改进卡片；刷新产物摘要；把本轮教训记入运行记忆（供下一轮分析师参考）
     rs.ports['quality_cards'] = (soft.gaps ?? []).slice(0, 3).map((g) => ({ category: 'render', message: g }));
+    const mem = Array.isArray(rs.ports['run_memory']) ? (rs.ports['run_memory'] as unknown[]) : [];
+    mem.push({ round: mem.length + 1, score: soft.score, gaps: soft.gaps ?? [] });
+    rs.ports['run_memory'] = mem;
     const art = rs.ports['artifact'] as { html?: string } | undefined;
     if (art?.html) rs.ports['artifact_summary'] = summarizeArtifact(art.html);
     return { pass: false, output: { score: soft.score, min_score: minScore, gaps: soft.gaps } };

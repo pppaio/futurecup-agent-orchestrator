@@ -147,6 +147,7 @@ export const DecompositionSpecSchema = z.object({
   ambiguities: z.array(AmbiguitySchema).default([]),
   tasks: z.array(z.object({ id: z.string(), agent_cap: z.string(), spec: z.string() })).default([]),
   plan: z.array(z.object({ step: z.string(), acceptance: z.array(z.string()).default([]) })).optional(),
+  changes: z.array(z.string()).default([]), // 返工轮：基于上一版的具体修改要求（增量，不推倒重做）
 });
 export type DecompositionSpec = z.infer<typeof DecompositionSpecSchema>;
 

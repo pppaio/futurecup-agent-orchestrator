@@ -12,7 +12,7 @@ export const AUTO_WF: WorkflowDef = {
   name: '自主编排模式',
   entry: 'n1',
   nodes: [
-    { id: 'n1', type: 'agent', agent: 'analyst', inputs: ['req', 'quality_cards'], outputs: ['spec'], note: 'plan replan' },
+    { id: 'n1', type: 'agent', agent: 'analyst', inputs: ['req', 'spec', 'quality_cards', 'artifact', 'run_memory'], outputs: ['spec'], note: 'plan replan' },
     { id: 'n2', type: 'subflow', subflow: 'step-pipeline', inputs: ['spec'], outputs: ['artifact'] },
     { id: 'n3', type: 'verify', verifier: 'hard-sandbox', inputs: ['artifact', 'spec'], outputs: ['hard_report'] },
     { id: 'n4', type: 'agent', agent: 'critic', inputs: ['artifact', 'spec'], outputs: ['soft_report'] },

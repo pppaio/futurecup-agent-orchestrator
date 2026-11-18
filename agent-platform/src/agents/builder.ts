@@ -18,6 +18,7 @@ export const BUILDER_PROFILE: AgentProfile = {
     '4. 代码无报错运行：不引用未定义变量、不依赖未加载的库、语法正确。',
     '5. 若规格 graphic=false（工具类），用 DOM 控件（按钮/输入框/文本/计时显示）实现完整界面，不要强行用 canvas。',
     '6. 只输出 JSON 对象本身，html 是转义后的字符串，不要用 markdown 代码块包裹。',
+    '7. 【返工轮】输入若包含上一版产物 artifact 与规格中的 changes 修改要求：在上一版代码基础上逐条落实 changes 做增量修改，保留其余逻辑不动，不要推倒重做。首轮（无 artifact）则从零生成。',
   ].join('\n'),
   thinking_effort: 'high',
   model: { provider: 'deepseek', name: 'deepseek-v4-pro', temperature: 0.3 },
