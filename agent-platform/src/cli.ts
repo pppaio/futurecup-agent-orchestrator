@@ -4,6 +4,7 @@ import { FakeLLM, DeepSeekLLM } from './gateway/llm.js';
 import type { LLMGateway } from './gateway/llm.js';
 import { runBench, writeCsv } from './bench/runner.js';
 import { runCompare, writeCompareCsv } from './bench/compare.js';
+import { DATASET, HARD_DATASET } from './bench/dataset.js';
 import { renderCharts } from './bench/charts.js';
 import { summarizeCsv } from './bench/summary.js';
 import { PlaywrightSandbox } from './sandbox/sandbox.js';
@@ -417,10 +418,13 @@ async function compare(): Promise<void> {
     );
     console.log('[compare] 无 API key，使用 fake LLM（仅验证流水线，数字无意义）');
   }
-  const limit = Number(process.env.COMPARE_LIMIT ?? '8');
-  console.log(`子集 ${limit} 样本 × 3 策略`);
-  const rows = await runCompare(llm, limit);
-  writeCompareCsv(rows, 'runs/results-compare.csv');
+  const hard = process.env.COMPARE_SET === 'hard';
+  const limit = Number(process.env.COMPARE_LIMIT ?? (hard ? '2' : '8'));
+  console.log(`${hard ? '[难样本组]' : ''}子集 ${limit} 样本 × 3 策略`);
+  const rows = await runCompare(llm, limit, hard ? HARD_DATASET : DATASET);
+  const outPath = hard ? 'runs/results-compare-hard.csv' : 'runs/results-compare.csv';
+  writeCompareCsv(rows, outPath);
+  console.log(`结果落盘: ${outPath}`);
   console.log('\n三策略对比（可运行率，同一 L1 硬验证口径）：');
   for (const r of rows) {
     console.log(`  ${r.strategy.padEnd(20)} ${r.runnable}/${r.total}  (${r.rate})  平均首轮错误 ${r.avg_first_errors}`);

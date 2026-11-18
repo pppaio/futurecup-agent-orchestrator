@@ -32,3 +32,9 @@ export const DATASET: BenchItem[] = [
   { id: 'e3', category: '边界/歧义', requirement: '随便做点什么' },
   { id: 'e4', category: '边界/歧义', requirement: '做一个应用' },
 ];
+
+/** 补充实验：高难度样本组（见 docs/10）。失败必须响亮、且 3 轮内可修。 */
+export const HARD_DATASET: BenchItem[] = [
+  { id: 'h1', category: '高难度·多实体', requirement: '做一个太空弹幕射击：3 种敌人（直线下压、左右横移、追踪玩家）各自发射不同弹幕，玩家 3 点血量，被击中扣血，击毁 20 个敌人进下一关，每关敌人生成速度与弹幕密度递增' },
+  { id: 'h2', category: '高难度·物理状态', requirement: '做一个平台跳跃：重力和平台碰撞、可二段跳、会左右移动的陷阱、碰到陷阱血量归零重开本关、集齐全部金币通关、方向键移动、空格跳跃' },
+];

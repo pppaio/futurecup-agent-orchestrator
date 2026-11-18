@@ -8,7 +8,7 @@ import { ALL_AGENTS } from '../agents/profiles.js';
 import { GAME_GEN_WF } from '../workflows/game-gen.js';
 import { S1_SERIAL_WF, S2_NO_GATE_WF } from '../workflows/strategies.js';
 import type { WorkflowDef, HardReport, RunEvent } from '../types.js';
-import { DATASET } from './dataset.js';
+import { DATASET, HARD_DATASET, type BenchItem } from './dataset.js';
 
 export interface StrategyRow {
   strategy: string;
@@ -51,12 +51,16 @@ function extractAnalystSpec(events: RunEvent[]): { graphic?: boolean } | null {
   }
 }
 
-/** 三策略对比：同一批样本、同一"能否通过 L1 硬验证"的口径。limit 用于控成本/时间的子集实验。 */
-export async function runCompare(llm: LLMGateway, limit = DATASET.length): Promise<StrategyRow[]> {
+/** 三策略对比：同一批样本、同一"能否通过 L1 硬验证"的口径。limit 用于控成本/时间的子集实验；dataset 可换成难样本组。 */
+export async function runCompare(
+  llm: LLMGateway,
+  limit = DATASET.length,
+  dataset: BenchItem[] = DATASET,
+): Promise<StrategyRow[]> {
   const store = new EventStore('runs');
   const sandbox = new PlaywrightSandbox();
   const rows: StrategyRow[] = [];
-  const subset = DATASET.slice(0, limit);
+  const subset = dataset.slice(0, limit);
 
   for (const s of STRATEGIES) {
     let runnable = 0;
