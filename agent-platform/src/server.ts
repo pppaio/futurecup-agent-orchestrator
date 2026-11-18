@@ -9,6 +9,7 @@ import { SingleHtmlPackager } from './packager/packager.js';
 import { Engine } from './engine/engine.js';
 import { ALL_AGENTS } from './agents/profiles.js';
 import { GAME_GEN_WF } from './workflows/game-gen.js';
+import { AUTO_WF } from './workflows/auto-plan.js';
 import type { HardReport, RunEvent, RunId } from './types.js';
 
 try {
@@ -181,6 +182,41 @@ app.delete('/api/providers/:id', (req, res) => {
   res.json({ ok: true });
 });
 
+// ---------- 余额查询（DeepSeek 提供 /user/balance；其它供应商一般不提供，标 null） ----------
+let balanceCache: { at: number; data: { id: string; name: string; balance: string | null; currency: string }[] } | null = null;
+app.get('/api/balance', async (_req, res) => {
+  try {
+    if (!balanceCache || Date.now() - balanceCache.at > 60_000) {
+      const deepseek = providers.get('deepseek');
+      let balance: string | null = null;
+      let currency = '';
+      if (deepseek) {
+        const r = await fetch(`${deepseek.baseUrl}/user/balance`, {
+          headers: { Authorization: `Bearer ${deepseek.apiKey}` },
+          signal: AbortSignal.timeout(8000),
+        });
+        if (r.ok) {
+          const data = (await r.json()) as { is_available?: boolean; balance_infos?: { currency: string; total_balance: string }[] };
+          balance = data.balance_infos?.[0]?.total_balance ?? null;
+          currency = data.balance_infos?.[0]?.currency ?? '';
+        }
+      }
+      balanceCache = {
+        at: Date.now(),
+        data: [...providers.values()].map((p) => ({
+          id: p.id,
+          name: p.name,
+          balance: p.id === 'deepseek' ? balance : null, // 其它供应商无标准余额接口
+          currency,
+        })),
+      };
+    }
+    res.json({ providers: balanceCache.data, fetched_at: balanceCache.at });
+  } catch (e) {
+    res.status(502).json({ error: String(e) });
+  }
+});
+
 app.post('/api/runs', (req, res) => {
   const requirement = String(req.body?.requirement ?? '').trim();
   if (!requirement) {
@@ -200,7 +236,23 @@ app.post('/api/runs', (req, res) => {
       : mode === 'saving'
         ? { w_succ: 0.3, w_speed: 0.2, w_cost: 0.5 }
         : undefined;
-  const runId = engine.start(GAME_GEN_WF, { requirement }, { overrides: config, schedulerWeights });
+  // 每轮次上限自定义（省流：quality_rounds 调小甚至 0）
+  const rawLimits = (req.body?.limits ?? {}) as Record<string, unknown>;
+  const num = (v: unknown): number | undefined => {
+    const n = Number(v);
+    return Number.isFinite(n) && n >= 0 ? Math.floor(n) : undefined;
+  };
+  const limits = {
+    fix_rounds: num(rawLimits.fix_rounds),
+    quality_rounds: num(rawLimits.quality_rounds),
+    revise_rounds: num(rawLimits.revise_rounds),
+    max_total_iters: num(rawLimits.max_total_iters),
+    timeout_sec: num(rawLimits.timeout_sec),
+  };
+  // 编排模式：fixed=固定流水线 / auto=自主编排（分析师出计划，引擎逐步编排）
+  const autoMode = String(req.body?.mode ?? 'fixed') === 'auto';
+  const wf = autoMode ? AUTO_WF : GAME_GEN_WF;
+  const runId = engine.start(wf, { requirement }, { overrides: config, schedulerWeights, limits });
   runsOrder.unshift(runId);
   res.json({ runId });
 });

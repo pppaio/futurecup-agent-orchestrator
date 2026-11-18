@@ -48,6 +48,14 @@ export interface StartOptions {
   runDirOverride?: string;
   /** 智能调度权重覆盖（省流模式调高 w_cost / 调低 w_succ）。 */
   schedulerWeights?: { w_succ: number; w_speed: number; w_cost: number };
+  /** 每轮次上限自定义（省流：把 quality_rounds 调小甚至 0）。 */
+  limits?: {
+    fix_rounds?: number;       // 硬修复循环（默认 3）
+    quality_rounds?: number;   // 质量返工循环（默认 5）
+    revise_rounds?: number;    // 人工返工循环（默认 5）
+    max_total_iters?: number;  // 总轮次上限（默认 20）
+    timeout_sec?: number;      // 单节点超时（默认 900）
+  };
 }
 
 interface NodeState {
@@ -116,6 +124,7 @@ export class Engine {
 
   /** 启动一次运行（后台执行），立即返回 runId。 */
   start(wf: WorkflowDef, task: TaskInput, startOpts: StartOptions = {}): RunId {
+    if (startOpts.limits) wf = this.applyLimits(wf, startOpts.limits);
     const runId = ('r_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6)) as RunId;
     const runDir = startOpts.runDirOverride ?? this.opts.store.runDir(runId);
     const startedAt = Date.now();
@@ -242,6 +251,31 @@ export class Engine {
   private flushWaiters(rs: RunState): void {
     const ws = rs.waiters.splice(0);
     for (const w of ws) w();
+  }
+
+  /** 按 run 级 limits 覆盖克隆工作流：loop 边的 max_iters 按「来源节点类型」归类调整。 */
+  private applyLimits(wf: WorkflowDef, l: NonNullable<StartOptions['limits']>): WorkflowDef {
+    const edges = wf.edges.map((e) => {
+      if (!e.loop) return e;
+      const fromNode = wf.nodes.find((n) => n.id === e.from);
+      let max = e.loop.max_iters;
+      if (fromNode?.type === 'gate' && l.quality_rounds !== undefined) max = l.quality_rounds;
+      else if (fromNode?.type === 'human' && l.revise_rounds !== undefined) max = l.revise_rounds;
+      else if (l.fix_rounds !== undefined) max = l.fix_rounds;
+      return { ...e, loop: { ...e.loop, max_iters: Math.max(0, max) } };
+    });
+    return {
+      ...wf,
+      edges,
+      limits: {
+        ...wf.limits,
+        ...(l.max_total_iters !== undefined ? { max_total_iters: l.max_total_iters } : {}),
+        ...(l.timeout_sec !== undefined ? { timeout_sec: l.timeout_sec } : {}),
+      },
+      quality: wf.quality
+        ? { ...wf.quality, ...(l.quality_rounds !== undefined ? { max_iters: l.quality_rounds } : {}) }
+        : undefined,
+    };
   }
 
   /** 边传播：loop 边带计数与看门狗（仅硬修复循环），普通边直接入队。 */
@@ -458,7 +492,8 @@ export class Engine {
       return { nodeId, pending: true };
     }
 
-    const NODE_TIMEOUT_MS = 600_000; // 10 分钟无输出 → 熔断
+    // R2 超时熔断：节点超过 wf.limits.timeout_sec 未完成 → 强制判失败（默认 10 分钟）
+    const NODE_TIMEOUT_MS = Math.max(60_000, rs.wf.limits.timeout_sec * 1000);
     let timer: ReturnType<typeof setTimeout> | undefined;
     let result: NodeResult;
     try {
@@ -506,9 +541,104 @@ export class Engine {
         return this.executePackager(rs, node);
       case 'gate':
         return this.executeGate(rs, node);
+      case 'subflow':
+        return this.executeSubflow(rs, node);
       default:
         throw new Error(`节点类型未实现：${node.type}`);
     }
+  }
+
+  /**
+   * 自主编排子流程（自调用演示）：按分析师输出的计划逐步执行，
+   * 每一步 = 生成者增量构建 → 硬验证 → 失败则修复者循环（≤ fix_rounds）。
+   * 控制面确定性：计划来自 LLM（数据），步骤编排是引擎代码。
+   */
+  private async executeSubflow(rs: RunState, node: WorkflowNode): Promise<NodeResult> {
+    const spec = (rs.ports['spec'] ?? {}) as {
+      goal?: string;
+      graphic?: boolean;
+      plan?: { step: string; acceptance: string[] }[];
+    };
+    const plan =
+      spec.plan && spec.plan.length > 0
+        ? spec.plan
+        : [{ step: spec.goal ?? rs.task.requirement, acceptance: [] }];
+    const fixRounds = 3;
+
+    this.emit({
+      run_id: rs.runId,
+      node_id: node.id,
+      type: 'agent.message',
+      payload: { role: 'system', text: `自主编排：分析师拆出 ${plan.length} 个开发步骤，引擎逐步编排「生成→验证→修复」` },
+    });
+
+    let artifact: { title?: string; html?: string } = { title: '', html: '' };
+    for (let i = 0; i < plan.length; i++) {
+      const step = plan[i];
+      const tag = `${node.id}#s${i + 1}`;
+      this.emit({
+        run_id: rs.runId,
+        node_id: tag,
+        type: 'node.entered',
+        payload: { run: 1, plan_step: `${i + 1}/${plan.length} ${step.step}` },
+      });
+
+      // 1) 生成者按本步要求增量构建（携带上一步摘要）
+      rs.ports['step'] = { index: i + 1, total: plan.length, requirement: step.step, acceptance: step.acceptance };
+      const buildNode: WorkflowNode = {
+        id: `${tag}-builder`,
+        type: 'agent',
+        agent: 'builder',
+        inputs: ['spec', 'step', 'artifact_summary'],
+        outputs: ['artifact'],
+      };
+      const buildRes = await this.executeAgent(rs, buildNode);
+      artifact = (buildRes.output ?? artifact) as { title?: string; html?: string };
+      rs.ports['artifact'] = artifact; // 子流程内直调 executeAgent，需手动写端口
+
+      // 2) 硬验证 → 失败则修复循环
+      const verifyNode: WorkflowNode = {
+        id: `${tag}-verify`,
+        type: 'verify',
+        verifier: 'hard-sandbox',
+        inputs: ['artifact', 'spec'],
+        outputs: ['hard_report'],
+      };
+      let vRes = await this.executeVerify(rs, verifyNode);
+      let fixCount = 0;
+      while (!vRes.pass && fixCount < fixRounds) {
+        fixCount++;
+        this.emit({
+          run_id: rs.runId,
+          node_id: tag,
+          type: 'loop.iteration',
+          payload: { iteration: fixCount, max: fixRounds, plan_step: step.step },
+        });
+        const fixNode: WorkflowNode = {
+          id: `${tag}-fixer`,
+          type: 'agent',
+          agent: 'fixer',
+          inputs: ['spec', 'error_cards', 'artifact_summary'],
+          outputs: ['artifact'],
+        };
+        const fixRes = await this.executeAgent(rs, fixNode);
+        artifact = (fixRes.output ?? artifact) as { title?: string; html?: string };
+        rs.ports['artifact'] = artifact;
+        vRes = await this.executeVerify(rs, verifyNode);
+      }
+
+      // 3) 更新摘要，供下一步增量构建
+      rs.ports['artifact_summary'] = summarizeArtifact(artifact.html ?? '');
+      this.emit({
+        run_id: rs.runId,
+        node_id: tag,
+        type: 'node.exited',
+        payload: { pass: vRes.pass, plan_step: step.step, fix_rounds: fixCount },
+      });
+    }
+
+    rs.ports['artifact'] = artifact;
+    return { pass: true, output: artifact };
   }
 
   private async executeAgent(rs: RunState, node: WorkflowNode): Promise<NodeResult> {
@@ -521,6 +651,15 @@ export class Engine {
       { role: 'system', content: profile.role_prompt },
       { role: 'user', content: userContent },
     ];
+
+    // 自主编排模式：要求分析师额外输出开发计划（引擎按计划逐步编排生成-验证-修复）
+    if (node.note?.includes('plan')) {
+      messages.push({
+        role: 'user',
+        content:
+          '[自主编排模式] 请额外输出开发计划 plan：2~4 个步骤，每一步含 step（做什么）与 acceptance（可机械验收的检查点）。引擎会按你的计划逐步执行「生成→硬验证→修复」，上一步产物会传给下一步增量完善。',
+      });
+    }
 
     // 人工指令（中断插入）：注入下一个 Agent 的上下文（一次性）
     const instr = ports['human_instruction'];

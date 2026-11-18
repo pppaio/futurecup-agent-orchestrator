@@ -14,6 +14,7 @@ import { ALL_AGENTS } from './agents/profiles.js';
 import { SAMPLE_GAME_HTML, SAMPLE_GAME_V2_HTML } from './agents/sample-game.js';
 import { SAMPLE_BROKEN_HTML } from './agents/sample-broken.js';
 import { GAME_GEN_WF } from './workflows/game-gen.js';
+import { AUTO_WF } from './workflows/auto-plan.js';
 import type { HardReport, RunEvent, WorkflowDef } from './types.js';
 
 // 加载 .env（若存在）
@@ -403,6 +404,52 @@ async function demoScheduler(): Promise<void> {
   if (!ok) process.exitCode = 1;
 }
 
+async function demoAuto(): Promise<void> {
+  const store = new EventStore('runs');
+  const good = JSON.stringify({ title: '打砖块', html: SAMPLE_GAME_HTML });
+  const fake = new FakeLLM({
+    analyst: () =>
+      JSON.stringify({
+        goal: '可玩的打砖块',
+        graphic: true,
+        acceptance: ['页面加载无 console 报错', 'canvas 有非空像素', '球拍可左右控制且球与砖块碰撞'],
+        assumptions: ['单人、无存档'],
+        ambiguities: [],
+        tasks: [],
+        plan: [
+          { step: '搭画布与核心循环：球拍移动、球反弹、砖块碰撞', acceptance: ['canvas 渲染非空', '球拍可控制'] },
+          { step: '加计分与通关判定：计分板、砖块清零胜利提示', acceptance: ['计分显示正确', '胜利条件可触发'] },
+        ],
+      }),
+    builder: () => good,
+    fixer: () => good,
+    critic: () => JSON.stringify({ score: 5, gaps: [] }),
+    reviser: () => good,
+  });
+  const engine = new Engine({
+    llm: fake,
+    sandbox: new PlaywrightSandbox(),
+    packager: new SingleHtmlPackager(),
+    store,
+    agents: ALL_AGENTS,
+    humanGate: false,
+  });
+  console.log('[demo:auto] 自主编排：分析师拆 2 步计划 → 引擎逐步编排生成-验证-修复 → 打包');
+  const runId = engine.start(AUTO_WF, { requirement: '做个能玩的打砖块' });
+  await engine.wait(runId);
+  const events = store.replay(runId);
+  summarize(events);
+  const planMsg = events.find((e) => e.type === 'agent.message' && String((e.payload as { text?: string }).text ?? '').includes('自主编排'));
+  const steps = events.filter((e) => e.type === 'node.entered' && e.node_id?.startsWith('n2#s'));
+  const stepVerify = events.filter((e) => e.type === 'verify.hard.result' && e.node_id?.startsWith('n2#s'));
+  const finished = events.some((e) => e.type === 'run.finished');
+  console.log(`计划消息  : ${planMsg ? '✅' : '❌'}`);
+  console.log(`步骤执行  : ${steps.length} 步（node.entered）· 步骤内验证 ${stepVerify.length} 次`);
+  const ok = finished && !!planMsg && steps.length >= 2 && stepVerify.length >= 2;
+  console.log(ok ? '\n✅ 自主编排（自调用）跑通：分析师出计划，引擎自动为每步编排生成-验证闭环' : '\n⚠️ 有环节缺失');
+  if (!ok) process.exitCode = 1;
+}
+
 async function compare(): Promise<void> {
   const key = process.env.DEEPSEEK_API_KEY;
   let llm: LLMGateway;
@@ -495,6 +542,9 @@ async function main(): Promise<void> {
       break;
     case 'demo:scheduler':
       await demoScheduler();
+      break;
+    case 'demo:auto':
+      await demoAuto();
       break;
     case 'bench':
       await bench();

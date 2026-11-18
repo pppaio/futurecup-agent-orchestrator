@@ -42,6 +42,7 @@ export const WorkflowNodeSchema = z.object({
   verifier: z.string().optional(),
   packager: z.string().optional(),
   gate: z.string().optional(),
+  subflow: z.string().optional(),
   inputs: z.array(z.string()).optional(),
   outputs: z.array(z.string()).optional(),
   note: z.string().optional(),
@@ -144,6 +145,7 @@ export const DecompositionSpecSchema = z.object({
   assumptions: z.array(z.string()).default([]),
   ambiguities: z.array(AmbiguitySchema).default([]),
   tasks: z.array(z.object({ id: z.string(), agent_cap: z.string(), spec: z.string() })).default([]),
+  plan: z.array(z.object({ step: z.string(), acceptance: z.array(z.string()).default([]) })).optional(),
 });
 export type DecompositionSpec = z.infer<typeof DecompositionSpecSchema>;
 

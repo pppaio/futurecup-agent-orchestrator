@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
-import { addProvider, getProviders, removeProvider, startRun } from '../api';
+import { addProvider, getBalance, getProviders, removeProvider, startRun } from '../api';
 import type { AgentConfig, AgentConfigItem, HealthInfo, ProviderInfo } from '../types';
+import type { BalanceInfo } from '../api';
 
 interface Props {
   requirement: string;
@@ -56,12 +57,17 @@ export function TaskConsole({ requirement, setRequirement, onStarted, health }: 
   const [config, setConfig] = useState<AgentConfig>(DEFAULT_CONFIG);
   const [providers, setProviders] = useState<ProviderInfo[]>([]);
   const [scheduler, setScheduler] = useState<'off' | 'quality' | 'saving'>('off');
+  const [mode, setMode] = useState<'fixed' | 'auto'>('fixed');
   const [showApiPanel, setShowApiPanel] = useState(false);
   const [apiForm, setApiForm] = useState({ name: '', baseUrl: '', apiKey: '', models: '' });
   const [apiMsg, setApiMsg] = useState<string | null>(null);
+  const [balance, setBalance] = useState<BalanceInfo | null>(null);
+  const [showLimits, setShowLimits] = useState(false);
+  const [limits, setLimits] = useState({ fix_rounds: 3, quality_rounds: 5, revise_rounds: 5, max_total_iters: 20, timeout_sec: 900 });
 
   useEffect(() => {
     getProviders().then(setProviders).catch(() => setProviders([]));
+    getBalance().then(setBalance).catch(() => setBalance(null));
   }, []);
 
   async function submitApi() {
@@ -102,7 +108,7 @@ export function TaskConsole({ requirement, setRequirement, onStarted, health }: 
     setBusy(true);
     setError(null);
     try {
-      const { runId } = await startRun(requirement.trim(), config, scheduler);
+      const { runId } = await startRun(requirement.trim(), config, scheduler, limits, mode);
       onStarted(runId, config);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
@@ -143,6 +149,9 @@ export function TaskConsole({ requirement, setRequirement, onStarted, health }: 
           <button className="btn btn-ghost" onClick={() => setShowApiPanel((s) => !s)}>
             {showApiPanel ? '收起接入 API ▲' : '接入 API / 供应商▼'}
           </button>
+          <button className="btn btn-ghost" onClick={() => setShowLimits((s) => !s)}>
+            {showLimits ? '收起运行设置 ▲' : '运行设置（轮次上限）▼'}
+          </button>
           <label className="scheduler-toggle">
             调度：
             <select value={scheduler} onChange={(e) => setScheduler(e.target.value as 'off' | 'quality' | 'saving')}>
@@ -151,10 +160,31 @@ export function TaskConsole({ requirement, setRequirement, onStarted, health }: 
               <option value="saving">智能·省流</option>
             </select>
           </label>
+          <label className="scheduler-toggle">
+            编排：
+            <select value={mode} onChange={(e) => setMode(e.target.value as 'fixed' | 'auto')}>
+              <option value="fixed">固定流水线</option>
+              <option value="auto">自主编排（分析师拆步骤→引擎自动调度）</option>
+            </select>
+          </label>
           {health && (
             <span className="health-note">
               后端 {health.ok ? '在线' : '离线'} · 模型{' '}
-              <b>{health.model === 'fake' ? 'fake(演示)' : health.model}</b> · 历史 run {health.runs}
+              <b>{health.model === 'fake' ? 'fake(演示)' : health.model}</b>
+              {balance && (
+                <>
+                  {' · '}
+                  {balance.providers.map((p) =>
+                    p.balance !== null ? (
+                      <span key={p.id}>
+                        {p.name}余额 <b className="balance-num">¥{p.balance}</b>
+                      </span>
+                    ) : null,
+                  )}
+                </>
+              )}
+              {' · 历史 run '}
+              {health.runs}
             </span>
           )}
         </div>
@@ -247,6 +277,69 @@ export function TaskConsole({ requirement, setRequirement, onStarted, health }: 
         </div>
       )}
 
+      {showLimits && (
+        <div className="console-card config-panel">
+          <div className="config-head">
+            <span className="field-label">运行设置：每次 run 的循环轮次上限（调小 = 省钱，调大 = 更执着）</span>
+          </div>
+          <div className="limits-row">
+            <label>
+              硬修复轮次
+              <input
+                type="number"
+                min={0}
+                max={9}
+                value={limits.fix_rounds}
+                onChange={(e) => setLimits((l) => ({ ...l, fix_rounds: Number(e.target.value) }))}
+              />
+            </label>
+            <label>
+              质量返工轮次
+              <input
+                type="number"
+                min={0}
+                max={9}
+                value={limits.quality_rounds}
+                onChange={(e) => setLimits((l) => ({ ...l, quality_rounds: Number(e.target.value) }))}
+              />
+            </label>
+            <label>
+              人工返工轮次
+              <input
+                type="number"
+                min={0}
+                max={9}
+                value={limits.revise_rounds}
+                onChange={(e) => setLimits((l) => ({ ...l, revise_rounds: Number(e.target.value) }))}
+              />
+            </label>
+            <label>
+              总轮次上限
+              <input
+                type="number"
+                min={1}
+                max={99}
+                value={limits.max_total_iters}
+                onChange={(e) => setLimits((l) => ({ ...l, max_total_iters: Number(e.target.value) }))}
+              />
+            </label>
+            <label>
+              单节点超时(秒)
+              <input
+                type="number"
+                min={60}
+                max={3600}
+                value={limits.timeout_sec}
+                onChange={(e) => setLimits((l) => ({ ...l, timeout_sec: Number(e.target.value) }))}
+              />
+            </label>
+          </div>
+          <p className="config-hint">
+            日常测试省钱配方：质量返工轮次设 0~1。正式演示/录视频再调回 5。
+          </p>
+        </div>
+      )}
+
       {showApiPanel && (
         <div className="console-card config-panel">
           <div className="config-head">
@@ -289,8 +382,8 @@ export function TaskConsole({ requirement, setRequirement, onStarted, health }: 
               <span key={p.id} className="api-chip">
                 {p.name}（{p.models.join(' / ')}）
                 {p.id !== 'deepseek' && p.id !== 'qwen' && (
-                  <button className="api-del" onClick={() => removeApi(p.id)} title="删除">
-                    ✕
+                  <button className="api-del" onClick={() => removeApi(p.id)} title="删除该供应商">
+                    删除
                   </button>
                 )}
               </span>

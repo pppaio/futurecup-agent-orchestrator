@@ -14,15 +14,25 @@ async function json<T>(res: Response): Promise<T> {
   return (await res.json()) as T;
 }
 
+export interface RunLimits {
+  fix_rounds?: number;
+  quality_rounds?: number;
+  revise_rounds?: number;
+  max_total_iters?: number;
+  timeout_sec?: number;
+}
+
 export async function startRun(
   requirement: string,
   config?: AgentConfig,
   scheduler?: 'off' | 'quality' | 'saving',
+  limits?: RunLimits,
+  mode?: 'fixed' | 'auto',
 ): Promise<{ runId: string }> {
   const res = await fetch('/api/runs', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ requirement, config, scheduler }),
+    body: JSON.stringify({ requirement, config, scheduler, limits, mode }),
   });
   return json<{ runId: string }>(res);
 }
@@ -74,6 +84,21 @@ export async function addProvider(input: {
 export async function removeProvider(id: string): Promise<{ ok: boolean }> {
   const res = await fetch(`/api/providers/${id}`, { method: 'DELETE' });
   return json<{ ok: boolean }>(res);
+}
+
+export interface BalanceInfo {
+  providers: { id: string; name: string; balance: string | null; currency: string }[];
+  fetched_at: number;
+}
+
+export async function getBalance(): Promise<BalanceInfo | null> {
+  try {
+    const res = await fetch('/api/balance');
+    if (!res.ok) return null;
+    return (await res.json()) as BalanceInfo;
+  } catch {
+    return null;
+  }
 }
 
 /** 打开 SSE 事件流；后端会先回放历史事件再推增量。 */
