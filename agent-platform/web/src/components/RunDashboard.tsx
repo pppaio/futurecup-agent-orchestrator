@@ -283,7 +283,10 @@ export function RunDashboard({ runId, requirement, config, mode, onOpenReport, o
           <div className="event-list" ref={listRef}>
             {events.length === 0 && <div className="empty-note">等待事件…</div>}
             {events.map((e) => (
-              <div key={e.seq} className={`evt evt-${e.type.replace(/\./g, '-')}`}>
+              <div
+                key={e.seq}
+                className={`evt evt-${e.type.replace(/\./g, '-')}${e.agent_id ? ` evt-agent-${e.agent_id}` : ''}`}
+              >
                 <span className="evt-seq">#{e.seq}</span>
                 <span className="evt-type">{e.type}</span>
                 <span className="evt-sum">{summarizeEvent(e)}</span>

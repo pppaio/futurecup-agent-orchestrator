@@ -30,6 +30,17 @@ async function main() {
             seen.add(tag + ':inner');
             out.push(`[内部溢出] <${tag}> ${el.scrollWidth}>${el.clientWidth} 文本:${txt}`);
           }
+          // 纵向被裁：容器高度受限且内容更高（overflow hidden 会盖住内容）
+          const style = getComputedStyle(el);
+          if (
+            el.scrollHeight > el.clientHeight + 4 &&
+            el.clientHeight > 10 &&
+            (style.overflowY === 'hidden' || style.overflow === 'hidden') &&
+            !seen.has(tag + ':vclip')
+          ) {
+            seen.add(tag + ':vclip');
+            out.push(`[纵向被裁] <${tag}> 内容高${el.scrollHeight} > 框高${el.clientHeight} (overflow:hidden) 文本:${txt}`);
+          }
         });
         return out.slice(0, 30);
       });
