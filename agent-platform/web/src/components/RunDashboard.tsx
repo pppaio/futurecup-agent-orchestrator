@@ -321,7 +321,7 @@ export function RunDashboard({ runId, requirement, config, mode, onOpenReport, o
             </button>
             <input
               className="instr-input"
-              placeholder="不满意？输入修改指令（如：加个计分板、背景换成深蓝）"
+              placeholder="不满意？输入修改指令（如：加个计分板）——分析师会结合指令与当前版本重新分析后改动"
               value={instruction}
               onChange={(e) => setInstruction(e.target.value)}
             />

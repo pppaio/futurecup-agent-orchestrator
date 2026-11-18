@@ -12,7 +12,7 @@ export const AUTO_WF: WorkflowDef = {
   name: '自主编排模式',
   entry: 'n1',
   nodes: [
-    { id: 'n1', type: 'agent', agent: 'analyst', inputs: ['req', 'spec', 'quality_cards', 'artifact', 'run_memory'], outputs: ['spec'], note: 'plan replan' },
+    { id: 'n1', type: 'agent', agent: 'analyst', inputs: ['req', 'spec', 'quality_cards', 'artifact', 'instruction', 'run_memory'], outputs: ['spec'], note: 'plan replan' },
     { id: 'n2', type: 'subflow', subflow: 'step-pipeline', inputs: ['spec'], outputs: ['artifact'] },
     { id: 'n3', type: 'verify', verifier: 'hard-sandbox', inputs: ['artifact', 'spec'], outputs: ['hard_report'] },
     { id: 'n4', type: 'agent', agent: 'critic', inputs: ['artifact', 'spec'], outputs: ['soft_report'] },
@@ -20,8 +20,7 @@ export const AUTO_WF: WorkflowDef = {
     { id: 'n5', type: 'agent', agent: 'fixer', inputs: ['spec', 'error_cards', 'artifact_summary'], outputs: ['artifact'] },
     { id: 'n6a', type: 'packager', packager: 'single-html', inputs: ['artifact'], outputs: ['bundle'], note: '版本留痕（评分未满时打包当前版本）' },
     { id: 'n6b', type: 'packager', packager: 'single-html', inputs: ['artifact'], outputs: ['bundle'], note: '交付打包（最终版本）' },
-    { id: 'n8', type: 'agent', agent: 'reviser', inputs: ['artifact', 'instruction', 'error_cards', 'quality_cards'], outputs: ['artifact'] },
-    { id: 'n9', type: 'human', note: '人工确认点：接受交付 / 输入修改指令返工' },
+    { id: 'n9', type: 'human', note: '人工确认点：接受交付 / 输入修改指令返工（回到分析师重新计划）' },
   ],
   edges: [
     { from: 'n1', to: 'n2', when: 'always' },
@@ -34,8 +33,7 @@ export const AUTO_WF: WorkflowDef = {
     { from: 'n6a', to: 'n1', when: 'always' },
     { from: 'n7', to: 'n6b', when: 'pass' },
     { from: 'n6b', to: 'n9', when: 'always' },
-    { from: 'n9', to: 'n8', when: 'fail', loop: { max_iters: 5 } },
-    { from: 'n8', to: 'n3', when: 'always' },
+    { from: 'n9', to: 'n1', when: 'fail', loop: { max_iters: 5 } },
   ],
   limits: { max_total_iters: 40, timeout_sec: 1800, max_concurrency: 4 },
   quality: { min_score: 5, max_iters: 5 },

@@ -40,7 +40,6 @@ const AGENT_META: { id: string; label: string }[] = [
   { id: 'builder', label: '生成者' },
   { id: 'critic', label: '软裁判' },
   { id: 'fixer', label: '修复者' },
-  { id: 'reviser', label: '修改者' },
 ];
 
 const EFFORTS: { value: AgentConfigItem['effort']; label: string }[] = [

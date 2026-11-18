@@ -679,18 +679,22 @@ export class Engine {
       });
     }
 
-    // 评分未满返工：把软裁判的差距 + 历史教训抛回分析师，要求读代码给针对性优化方案（增量，不重做）
+    // 评分未满返工 / 人工确认点返工：把裁判差距 + 用户指令抛回分析师，要求读代码给针对性优化方案（增量，不重做）
     const qualityCards = ports['quality_cards'];
-    if (node.note?.includes('replan') && Array.isArray(qualityCards) && qualityCards.length > 0) {
-      const gaps = qualityCards.map((c) => (c as { message?: string }).message ?? String(c)).join('；');
+    const instruction = ports['instruction'];
+    const hasCards = Array.isArray(qualityCards) && qualityCards.length > 0;
+    const hasInstruction = typeof instruction === 'string' && instruction.length > 0;
+    if (node.note?.includes('replan') && (hasCards || hasInstruction)) {
+      const gaps = hasCards ? qualityCards.map((c) => (c as { message?: string }).message ?? String(c)).join('；') : '（本次未附裁判差距）';
+      const instrText = hasInstruction ? `\n用户人工返工指令：${instruction}` : '';
       const mem = ports['run_memory'];
       const memText = Array.isArray(mem) && mem.length > 0 ? JSON.stringify(mem) : '（无历史）';
       messages.push({
         role: 'user',
         content:
-          `[评分未满返工] 上一版被软裁判评为低分，差距：${gaps}。历史返工记录：${memText}。` +
+          `[返工分析] 原因：${gaps}。${instrText}\n历史返工记录：${memText}。` +
           '输入中已附上一版完整代码（artifact）与上一版规格（spec）。请你：' +
-          '① 结合用户原始需求与裁判差距，重新分析并输出修订后的规格；' +
+          '① 结合用户原始需求、返工原因与用户指令，重新分析并输出修订后的规格；' +
           '② 在 changes 中给出 2~5 条具体修改要求（指明改哪个模块/哪个行为），让生成者基于上一版做增量修改，不要推倒重做。',
       });
     }

@@ -36,6 +36,7 @@ const M1_SINGLE_WF: WorkflowDef = {
 };
 
 function fakeHandlers(builderOutput: string, fixerOutput: string, criticScore = 5) {
+  let builderCalls = 0;
   return {
     analyst: () =>
       JSON.stringify({
@@ -46,7 +47,13 @@ function fakeHandlers(builderOutput: string, fixerOutput: string, criticScore = 
         ambiguities: [],
         tasks: [],
       }),
-    builder: () => builderOutput,
+    builder: () => {
+      builderCalls++;
+      // 首次故意返回坏产物（演示修复闭环）；返工轮返回好的（生成者"学会了"，与分析师返工语义一致）
+      return builderCalls === 1
+        ? builderOutput
+        : JSON.stringify({ title: '打砖块', html: SAMPLE_GAME_HTML });
+    },
     critic: () => JSON.stringify({ score: criticScore, gaps: criticScore < 4 ? ['画面简陋，缺少计分显示'] : [] }),
     fixer: () => fixerOutput,
     reviser: (messages: { role: string; content: string }[]) => {
