@@ -1,5 +1,5 @@
 import express from 'express';
-import { readFileSync, existsSync, readdirSync, writeFileSync, appendFileSync } from 'node:fs';
+import { readFileSync, existsSync, readdirSync, writeFileSync, appendFileSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { EventStore } from './event/store.js';
 import { MultiProviderLLM, providersFromEnv } from './gateway/llm.js';
@@ -330,13 +330,18 @@ app.get('/api/runs', (_req, res) => {
   const runsRoot = join(process.cwd(), 'runs');
   let dirs: string[] = [];
   try {
+    // 按目录 mtime（最后写入时间）倒序，再取前 200——不能直接 slice，
+    // 否则 readdir 顺序是目录名顺序，会把今天的 run 切掉
     dirs = readdirSync(runsRoot, { withFileTypes: true })
       .filter((d) => d.isDirectory() && existsSync(join(runsRoot, d.name, 'events.jsonl')))
+      .map((d) => ({ name: d.name, mtime: statSync(join(runsRoot, d.name)).mtimeMs }))
+      .sort((a, b) => b.mtime - a.mtime)
+      .slice(0, 200)
       .map((d) => d.name);
   } catch {
     /* 无 runs 目录 */
   }
-  for (const runId of dirs.slice(0, 200)) {
+  for (const runId of dirs) {
     try {
       const p = join(runsRoot, runId, 'events.jsonl');
       const raw = readFileSync(p, 'utf8');
