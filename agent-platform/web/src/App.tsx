@@ -60,8 +60,8 @@ export default function App() {
 
   const tabs: { key: View; label: string; disabled: boolean }[] = [
     { key: 'console', label: '① 任务台', disabled: false },
-    { key: 'dashboard', label: '② 运行看板', disabled: !runId },
-    { key: 'report', label: '③ 核验报告', disabled: !runId },
+    { key: 'dashboard', label: '② 运行看板', disabled: false },
+    { key: 'report', label: '③ 核验报告', disabled: false },
     { key: 'history', label: '④ 历史记录', disabled: false },
   ];
 
@@ -126,7 +126,7 @@ export default function App() {
           </>
         )}
 
-        {view === 'dashboard' && runId && (
+        {view === 'dashboard' && (
           <RunDashboard
             runId={runId}
             requirement={requirement}
@@ -137,7 +137,7 @@ export default function App() {
           />
         )}
 
-        {view === 'report' && runId && (
+        {view === 'report' && (
           <VerifyReport runId={runId} onBack={() => setView('dashboard')} />
         )}
 

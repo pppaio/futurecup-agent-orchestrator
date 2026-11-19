@@ -1,5 +1,5 @@
 import express from 'express';
-import { readFileSync, existsSync, readdirSync, writeFileSync, appendFileSync, statSync } from 'node:fs';
+import { readFileSync, existsSync, readdirSync, writeFileSync, appendFileSync, statSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { EventStore } from './event/store.js';
 import { MultiProviderLLM, providersFromEnv } from './gateway/llm.js';
@@ -315,6 +315,28 @@ app.post('/api/runs/:id/resume', (req, res) => {
   } catch (e) {
     res.status(400).json({ error: String(e) });
   }
+});
+
+/** 删除一次运行：若正在运行 → 先快速中断（中止在途调用），再删除目录与产物。 */
+app.delete('/api/runs/:id', async (req, res) => {
+  const runId = req.params.id;
+  try {
+    engine.interrupt(runId);
+    await Promise.race([engine.wait(runId), new Promise((r) => setTimeout(r, 6000))]);
+  } catch {
+    /* 不在内存（已结束/已重启）则直接删目录 */
+  }
+  engine.forget(runId as RunId);
+  const dir = join(process.cwd(), 'runs', runId);
+  if (existsSync(dir)) {
+    try {
+      rmSync(dir, { recursive: true, force: true });
+    } catch (e) {
+      res.status(500).json({ error: String(e) });
+      return;
+    }
+  }
+  res.json({ ok: true });
 });
 
 /** 历史记录：从磁盘扫 runs/ 目录（事件流第一行=需求，末行=终态），服务重启也不丢。 */

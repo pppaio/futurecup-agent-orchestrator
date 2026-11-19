@@ -5,7 +5,7 @@ import type { HardError, RunReport } from '../types';
 import { ErrorCurveChart } from './ErrorCurveChart';
 
 interface Props {
-  runId: string;
+  runId: string | null;
   onBack: () => void;
 }
 
@@ -28,6 +28,7 @@ export function VerifyReport({ runId, onBack }: Props) {
   const [error, setError] = useState<string | null>(null);
 
   async function load() {
+    if (!runId) return;
     setLoading(true);
     setError(null);
     try {
@@ -40,9 +41,24 @@ export function VerifyReport({ runId, onBack }: Props) {
   }
 
   useEffect(() => {
+    if (!runId) return;
     void load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [runId]);
+
+  // 空状态：还没开始任何项目
+  if (!runId) {
+    return (
+      <div className="empty-dash">
+        <div className="empty-dash-icon">📋</div>
+        <h2>暂无项目相关信息</h2>
+        <p>项目完成后，在这里查看硬验证明细、软裁判打分历史与版本记录。</p>
+        <button className="btn btn-primary" onClick={onBack}>
+          → 去任务台
+        </button>
+      </div>
+    );
+  }
 
   return (
     <div className="report-view">

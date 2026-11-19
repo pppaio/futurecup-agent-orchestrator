@@ -10,6 +10,8 @@ export interface SandboxOpts {
   requireCanvas?: boolean;
   /** 可选交互脚本：模拟按键/点击，用于断言验收条件。 */
   interaction?: (page: Page) => Promise<void>;
+  /** 运行中断信号：中止在途验证（加速中断）。 */
+  signal?: AbortSignal;
 }
 
 export interface Sandbox {
@@ -37,9 +39,14 @@ function canvasProbe(): boolean {
  */
 export class PlaywrightSandbox implements Sandbox {
   async run(html: string, opts: SandboxOpts): Promise<HardReport> {
+    if (opts.signal?.aborted) throw new DOMException('已中断', 'AbortError');
     const browser = await chromium.launch({ headless: true });
     const page = await browser.newPage({ viewport: { width: 640, height: 480 } });
     const errors: HardReport['errors'] = [];
+    const onAbort = () => {
+      void page.close().catch(() => {});
+    };
+    opts.signal?.addEventListener('abort', onAbort, { once: true });
 
     page.on('pageerror', (e) => errors.push({ type: 'pageerror', message: e.message, stack: e.stack }));
     page.on('console', (m) => {
@@ -93,7 +100,9 @@ export class PlaywrightSandbox implements Sandbox {
       }
     }
 
-    await browser.close();
+    await browser.close().catch(() => {});
+    opts.signal?.removeEventListener('abort', onAbort);
+    if (opts.signal?.aborted) throw new DOMException('已中断', 'AbortError');
     // 图形类：canvas 非空；工具类：DOM 有实际内容（节点数阈值）
     const requireCanvas = opts.requireCanvas ?? true;
     const dom_ok = requireCanvas ? canvas_nonempty : dom_node_count >= 12;

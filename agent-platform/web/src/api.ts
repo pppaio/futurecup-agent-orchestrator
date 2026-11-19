@@ -116,6 +116,11 @@ export async function getRuns(): Promise<RunHistoryItem[]> {
   return (await res.json()) as RunHistoryItem[];
 }
 
+export async function deleteRun(runId: string): Promise<{ ok: boolean }> {
+  const res = await fetch(`/api/runs/${runId}`, { method: 'DELETE' });
+  return json<{ ok: boolean }>(res);
+}
+
 /** 打开 SSE 事件流；后端会先回放历史事件再推增量。 */
 export function openEventStream(
   runId: string,

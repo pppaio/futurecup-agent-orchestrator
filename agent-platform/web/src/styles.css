@@ -936,3 +936,15 @@ a.btn {
 .evt-agent-fixer { border-left-color: #fb923c !important; }
 .evt-agent-reviser { border-left-color: #4ade80 !important; }
 .evt-agent { border-left-color: #94a3b8 !important; }
+
+/* 历史记录：在途行高亮 + 删除按钮 + 空状态 */
+.hist-row-active td { background: rgba(251, 191, 36, 0.05); }
+.hist-live { color: #fbbf24; font-size: 11px; animation: pulse 1.5s infinite; }
+@keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
+.hist-actions { display: flex; gap: 6px; align-items: center; }
+.btn-danger-sm { background: #3b1519; color: #fca5a5; border: 1px solid #7f1d1d; border-radius: 6px; cursor: pointer; padding: 4px 10px; font-size: 12px; }
+.btn-danger-sm:hover { background: #7f1d1d; color: #fff; }
+.empty-dash { text-align: center; padding: 80px 20px; color: #94a3b8; }
+.empty-dash-icon { font-size: 44px; margin-bottom: 14px; }
+.empty-dash h2 { color: #cbd5e1; margin-bottom: 10px; }
+.empty-dash p { margin-bottom: 18px; font-size: 14px; }

@@ -66,7 +66,10 @@ interface NodeState {
 }
 
 type NodeResult = { pass: boolean; output: unknown };
-type NodeDone = { nodeId: string; pending: false; result: NodeResult } | { nodeId: string; pending: true };
+type NodeDone =
+  | { nodeId: string; kind: 'done'; result: NodeResult }
+  | { nodeId: string; kind: 'pending' }
+  | { nodeId: string; kind: 'aborted' };
 
 interface RunState {
   wf: WorkflowDef;
@@ -88,6 +91,8 @@ interface RunState {
   pendingHumanPrompt?: string;
   pendingHumanNode?: string;
   schedulerWeights?: { w_succ: number; w_speed: number; w_cost: number };
+  /** 运行级中断信号：interrupt() 时中止所有在途 LLM/沙箱调用（加速中断）。 */
+  abortController: AbortController;
   waiters: (() => void)[];
 }
 
@@ -176,6 +181,7 @@ export class Engine {
       finished: false,
       interruptRequested: false,
       schedulerWeights: startOpts.schedulerWeights,
+      abortController: new AbortController(),
       waiters: [],
     };
     this.runs.set(runId, rs);
@@ -197,11 +203,17 @@ export class Engine {
     return new Promise((resolve) => rs.waiters.push(resolve));
   }
 
-  /** 请求中断：下一次节点边界生效（在途节点跑完后暂停）。 */
+  /** 请求中断：中止所有在途 LLM/沙箱调用（秒级生效），节点边界后暂停。 */
   interrupt(runId: RunId): void {
     const rs = this.runs.get(runId);
     if (!rs) throw new Error(`未知 run: ${runId}`);
     rs.interruptRequested = true;
+    rs.abortController.abort();
+  }
+
+  /** 从内存移除一个 run（删除历史记录时用）。 */
+  forget(runId: RunId): void {
+    this.runs.delete(runId);
   }
 
   /**
@@ -356,10 +368,11 @@ export class Engine {
 
       let humanPending = false;
       for (const d of done) {
-        if (d.pending) {
+        if (d.kind === 'pending') {
           humanPending = true;
           continue;
         }
+        if (d.kind === 'aborted') continue; // 用户中断导致的中止：不传播失败边，循环顶部会暂停
         this.propagateEdges(rs, d.nodeId, d.result);
 
         // §5.8：分析师产出阻塞性歧义 → 自动暂停转人工（批量实验可关）
@@ -490,7 +503,7 @@ export class Engine {
         const result: NodeResult = { pass: true, output: { action: 'auto_accept' } };
         st.output = result.output;
         this.emit({ run_id: rs.runId, node_id: nodeId, type: 'node.exited', payload: { pass: true } });
-        return { nodeId, pending: false, result };
+        return { nodeId, kind: 'done', result };
       }
       // 交互模式：暂停，等人工「接受 / 返工」
       rs.paused = true;
@@ -502,7 +515,7 @@ export class Engine {
         payload: { reason: 'awaiting_human', note: st.node.note ?? '人工确认点' },
       });
       this.flushWaiters(rs);
-      return { nodeId, pending: true };
+      return { nodeId, kind: 'pending' };
     }
 
     // R2 超时熔断：节点超过 wf.limits.timeout_sec 未完成 → 强制判失败（默认 10 分钟）
@@ -520,6 +533,17 @@ export class Engine {
         }),
       ]);
     } catch (err) {
+      // 用户中断中止的在途调用：不作为失败节点传播（runLoop 顶层会暂停）
+      if (rs.interruptRequested) {
+        if (timer) clearTimeout(timer);
+        this.emit({
+          run_id: rs.runId,
+          node_id: nodeId,
+          type: 'error',
+          payload: { message: '节点已中止（用户中断）' },
+        });
+        return { nodeId, kind: 'aborted' };
+      }
       this.emit({ run_id: rs.runId, node_id: nodeId, type: 'error', payload: { message: String(err) } });
       result = { pass: false, output: { error: String(err) } };
     } finally {
@@ -541,7 +565,7 @@ export class Engine {
     }
 
     this.emit({ run_id: rs.runId, node_id: nodeId, type: 'node.exited', payload: { pass: result.pass } });
-    return { nodeId, pending: false, result };
+    return { nodeId, kind: 'done', result };
   }
 
   private async executeNode(rs: RunState, node: WorkflowNode): Promise<NodeResult> {
@@ -724,7 +748,7 @@ export class Engine {
       this.emit({ run_id: rs.runId, node_id: node.id, agent_id: profile.id, type: 'agent.message', payload: { role: m.role, text: m.content } });
     }
 
-    const res = await this.opts.llm.complete({ agent: profile, messages, json: true });
+    const res = await this.opts.llm.complete({ agent: profile, messages, json: true, signal: rs.abortController.signal });
     this.emit({ run_id: rs.runId, node_id: node.id, agent_id: profile.id, type: 'agent.message', payload: { role: 'assistant', text: res.text } });
 
     let parsed: unknown;
@@ -766,7 +790,7 @@ export class Engine {
     const requireCanvas = spec?.graphic ?? true;
 
     const shotsDir = join(rs.runDir, 'shots');
-    const report: HardReport = await this.opts.sandbox.run(html, { timeoutMs: 15000, shotsDir, requireCanvas });
+    const report: HardReport = await this.opts.sandbox.run(html, { timeoutMs: 15000, shotsDir, requireCanvas, signal: rs.abortController.signal });
 
     writeFileSync(join(rs.runDir, 'hard_report.json'), JSON.stringify(report, null, 2), 'utf8');
     this.emit({ run_id: rs.runId, node_id: node.id, type: 'verify.hard.result', payload: report as unknown as Record<string, unknown> });

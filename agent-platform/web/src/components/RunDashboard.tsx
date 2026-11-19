@@ -5,7 +5,7 @@ import type { AgentConfig, RunEvent, RunStatus } from '../types';
 import { NodeBar } from './NodeBar';
 
 interface Props {
-  runId: string;
+  runId: string | null;
   requirement: string;
   config: AgentConfig;
   mode: 'fixed' | 'auto';
@@ -88,6 +88,7 @@ export function RunDashboard({ runId, requirement, config, mode, onOpenReport, o
   const listRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
+    if (!runId) return;
     let closed = false;
 
     const handleEvent = (e: RunEvent) => {
@@ -180,9 +181,10 @@ export function RunDashboard({ runId, requirement, config, mode, onOpenReport, o
 
   async function handleInterrupt() {
     setActing('interrupt');
-    setActionMsg(null);
+    setActionMsg('项目正在中断中，请耐心等待…');
     try {
-      await interruptRun(runId);
+      await interruptRun(runId ?? '');
+      setActionMsg('项目正在中断中，请耐心等待…（在途任务已中止）');
     } catch (e) {
       setActionMsg(e instanceof Error ? e.message : String(e));
     } finally {
@@ -194,7 +196,7 @@ export function RunDashboard({ runId, requirement, config, mode, onOpenReport, o
     setActing('resume');
     setActionMsg(null);
     try {
-      await resumeRun(runId, instruction.trim());
+      await resumeRun(runId ?? '', instruction.trim());
       setInstruction('');
     } catch (e) {
       setActionMsg(e instanceof Error ? e.message : String(e));
@@ -208,13 +210,27 @@ export function RunDashboard({ runId, requirement, config, mode, onOpenReport, o
     setActing('resume');
     setActionMsg(null);
     try {
-      await resumeRun(runId, '');
+      await resumeRun(runId ?? '', '');
       setInstruction('');
     } catch (e) {
       setActionMsg(e instanceof Error ? e.message : String(e));
     } finally {
       setActing(null);
     }
+  }
+
+  // 空状态：还没开始任何项目
+  if (!runId) {
+    return (
+      <div className="empty-dash">
+        <div className="empty-dash-icon">📊</div>
+        <h2>暂无项目相关信息</h2>
+        <p>去任务台输入一句话需求开始生成，运行过程和结果会实时显示在这里。</p>
+        <button className="btn btn-primary" onClick={onBack}>
+          → 去任务台
+        </button>
+      </div>
+    );
   }
 
   return (

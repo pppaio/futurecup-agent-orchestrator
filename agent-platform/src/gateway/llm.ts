@@ -22,6 +22,7 @@ export interface LLMGateway {
     agent: AgentProfile;
     messages: LLMMessage[];
     json?: boolean;
+    signal?: AbortSignal; // 运行中断时中止在途调用（加速中断）
   }): Promise<LLMResult>;
 }
 
@@ -83,7 +84,7 @@ export class MultiProviderLLM implements LLMGateway {
     this.providers.delete(id);
   }
 
-  async complete(opts: { agent: AgentProfile; messages: LLMMessage[]; json?: boolean }): Promise<LLMResult> {
+  async complete(opts: { agent: AgentProfile; messages: LLMMessage[]; json?: boolean; signal?: AbortSignal }): Promise<LLMResult> {
     const providerId = opts.agent.model.provider ?? 'deepseek';
     const provider = this.providers.get(providerId);
     if (!provider) throw new Error(`未配置供应商 '${providerId}'（在 .env 添加 PROVIDER_${providerId.toUpperCase()}_BASE/_KEY/_MODELS）`);
@@ -109,9 +110,10 @@ export class MultiProviderLLM implements LLMGateway {
       body.response_format = { type: 'json_object' };
     }
 
-    // R2 超时熔断：单次调用 10 分钟无响应 → Abort
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), 600_000);
+    // R2 超时熔断（10 分钟）+ 运行中断信号（加速中断），二者谁先到谁中止
+    const signals = [AbortSignal.timeout(600_000)];
+    if (opts.signal) signals.push(opts.signal);
+    const signal = AbortSignal.any(signals);
     try {
       const res = await fetch(`${provider.baseUrl}/chat/completions`, {
         method: 'POST',
@@ -120,11 +122,11 @@ export class MultiProviderLLM implements LLMGateway {
           Authorization: `Bearer ${provider.apiKey}`,
         },
         body: JSON.stringify(body),
-        signal: controller.signal,
+        signal,
       });
       return await this.handleResponse(res, opts, provider);
     } finally {
-      clearTimeout(timer);
+      /* AbortSignal.any 无需手动清理 */
     }
   }
 
