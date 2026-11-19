@@ -457,6 +457,72 @@ async function demoAuto(): Promise<void> {
   if (!ok) process.exitCode = 1;
 }
 
+async function demoRollback(): Promise<void> {
+  const store = new EventStore('runs');
+  const good = JSON.stringify({ title: '打砖块', html: SAMPLE_GAME_HTML });
+  let criticCalls = 0;
+  const fake = new FakeLLM({
+    analyst: () =>
+      JSON.stringify({
+        goal: '可玩的打砖块',
+        graphic: true,
+        acceptance: ['页面加载无 console 报错', 'canvas 有非空像素'],
+        assumptions: [],
+        ambiguities: [],
+        tasks: [],
+      }),
+    builder: () => good,
+    critic: () => {
+      criticCalls++;
+      // 首版 4 分（未满 5）→ 返工后 2 分（退步！）→ 再改回 5 分
+      return JSON.stringify(
+        criticCalls === 1 ? { score: 4, gaps: ['画面简陋，缺少计分显示'] } : criticCalls === 2 ? { score: 2, gaps: ['球拍不能移动（退步）'] } : { score: 5, gaps: [] },
+      );
+    },
+    fixer: () => good,
+    reviser: () => good,
+  });
+  const engine = new Engine({
+    llm: fake,
+    sandbox: new PlaywrightSandbox(),
+    packager: new SingleHtmlPackager(),
+    store,
+    agents: ALL_AGENTS,
+    humanGate: true,
+  });
+  console.log('[demo:rollback] 退步自动回滚 + 人工指令「返回第一版」');
+  const runId = engine.start(GAME_GEN_WF, { requirement: '做个能玩的打砖块' }, { limits: { quality_rounds: 2, target_score: 5 } });
+  await engine.wait(runId);
+  // 第一轮质量循环收敛到 5 分 → 人工确认点
+  let events = store.replay(runId);
+  const rollbackAuto = events.some((e) => e.type === 'verify.soft.verdict' && (e.payload as { score?: number }).score === 2);
+  const regressCard = events.some((e) => e.type === 'agent.message' && String((e.payload as { text?: string }).text ?? '').includes('退步'));
+  console.log(`触发退步场景: ${rollbackAuto} · 退步卡片出现: ${regressCard}`);
+  // 人工指令：返回第一版
+  const atHuman = events.some((e) => e.type === 'run.interrupted' && (e.payload as { reason?: string }).reason === 'awaiting_human');
+  if (atHuman) {
+    engine.resume(runId, '返回第一版');
+    await engine.wait(runId);
+    events = store.replay(runId);
+    const rollbackEv = events.find((e) => e.type === 'human.instruction' && (e.payload as { rollback?: string }).rollback);
+    console.log(`回滚事件: ${rollbackEv ? (rollbackEv.payload as { rollback?: string }).rollback : '❌ 无'}`);
+    // 再等一轮（修改后重新到人工确认点）→ 接受
+    const pausedAgain = events.some((e) => e.type === 'run.interrupted' && (e.payload as { reason?: string }).reason === 'awaiting_human');
+    if (pausedAgain) {
+      engine.resume(runId);
+      await engine.wait(runId);
+    }
+    events = store.replay(runId);
+  }
+  const finished = events.some((e) => e.type === 'run.finished');
+  const rollbackOk = events.some((e) => e.type === 'human.instruction' && (e.payload as { rollback?: string }).rollback);
+  const versions = events.filter((e) => e.type === 'artifact.created').length;
+  console.log(`终态: ${finished ? 'finished' : 'other'} · 打包版本数: ${versions}`);
+  const ok = finished && rollbackOk && versions >= 3;
+  console.log(ok ? '\n✅ 退步自动回滚 + 「返回第一版」人工回滚跑通' : '\n⚠️ 有环节缺失');
+  if (!ok) process.exitCode = 1;
+}
+
 async function compare(): Promise<void> {
   const key = process.env.DEEPSEEK_API_KEY;
   let llm: LLMGateway;
@@ -552,6 +618,9 @@ async function main(): Promise<void> {
       break;
     case 'demo:auto':
       await demoAuto();
+      break;
+    case 'demo:rollback':
+      await demoRollback();
       break;
     case 'bench':
       await bench();

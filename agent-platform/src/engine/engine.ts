@@ -1,4 +1,4 @@
-import { writeFileSync } from 'node:fs';
+import { writeFileSync, readFileSync, existsSync } from 'node:fs';
 import { createHash } from 'node:crypto';
 import { join } from 'node:path';
 import type {
@@ -238,6 +238,22 @@ export class Engine {
       if (hasInstruction) {
         this.emit({ run_id: runId, type: 'human.instruction', payload: { text: instruction } });
         rs.ports['instruction'] = instruction;
+        // 回滚指令：识别「返回第N版/第一版/回到第N版」→ 从版本文件恢复该版，作为后续修改的基底
+        const numMap: Record<string, number> = { 一: 1, 二: 2, 三: 3, 四: 4, 五: 5, 六: 6, 七: 7, 八: 8, 九: 9 };
+        const m = /([0-9一二三四五六七八九])\s*版/.exec(instruction);
+        if (m) {
+          const n = numMap[m[1]] ?? Number(m[1]);
+          const bundlePath = join(rs.runDir, `bundle-v${n}.html`);
+          if (Number.isFinite(n) && n >= 1 && existsSync(bundlePath)) {
+            const html = readFileSync(bundlePath, 'utf8');
+            rs.ports['artifact'] = { title: `回退版 v${n}`, html };
+            this.emit({
+              run_id: runId,
+              type: 'human.instruction',
+              payload: { text: instruction, rollback: `bundle-v${n}`, note: `已回退到第 ${n} 版，后续修改基于该版本` },
+            });
+          }
+        }
       }
       const result: NodeResult = hasInstruction
         ? { pass: false, output: { action: 'revise' } }
@@ -811,7 +827,7 @@ export class Engine {
     return { pass: report.ok, output: report };
   }
 
-  /** 质量门控（确定性代码，禁用 LLM）：软裁判分数低于阈值 → 把差距压成改进卡片并返工。 */
+  /** 质量门控（确定性代码，禁用 LLM）：软裁判分数低于阈值 → 把差距压成改进卡片并返工；退步自动回滚到历史最优版本。 */
   private executeGate(rs: RunState, node: WorkflowNode): NodeResult {
     const minScore = rs.wf.quality?.min_score ?? 4;
     const soft = rs.ports['soft_report'] as { score?: number; gaps?: string[] } | undefined;
@@ -819,11 +835,33 @@ export class Engine {
       this.emit({ run_id: rs.runId, node_id: node.id, type: 'error', payload: { message: '质量门控缺少软评分（软裁判未完成）' } });
       return { pass: false, output: { reason: 'no_soft_report' } };
     }
+
+    // 记录历史最优版本（用于退步回滚与带缺陷交付）
+    const prevBest = Number(rs.ports['_best_score'] ?? 0);
+    const curArt = rs.ports['artifact'] as { title?: string; html?: string } | undefined;
+    if (soft.score >= prevBest) {
+      rs.ports['_best_score'] = soft.score;
+      rs.ports['_best_artifact'] = curArt;
+    }
+
     if (soft.score >= minScore) {
       return { pass: true, output: { score: soft.score, min_score: minScore } };
     }
-    // 低分 → 差距压成改进卡片；刷新产物摘要；把本轮教训记入运行记忆（供下一轮分析师参考）
-    rs.ports['quality_cards'] = (soft.gaps ?? []).slice(0, 3).map((g) => ({ category: 'render', message: g }));
+
+    // 低分 → 差距压成改进卡片
+    const cards = (soft.gaps ?? []).slice(0, 3).map((g) => ({ category: 'render', message: g }));
+    // 退步保护：本版比历史最优还差 → 自动回退到最优版本，在其基础上改进（避免"越改越差"）
+    if (soft.score < prevBest) {
+      const bestArt = rs.ports['_best_artifact'] as { title?: string; html?: string } | undefined;
+      if (bestArt?.html) {
+        rs.ports['artifact'] = bestArt;
+        cards.unshift({
+          category: 'render',
+          message: `本版退步（${soft.score} 分 < 历史最优 ${prevBest} 分），已自动回退到最优版本，请在其基础上改进，不要延续坏版本`,
+        });
+      }
+    }
+    rs.ports['quality_cards'] = cards;
     const mem = Array.isArray(rs.ports['run_memory']) ? (rs.ports['run_memory'] as unknown[]) : [];
     mem.push({ round: mem.length + 1, score: soft.score, gaps: soft.gaps ?? [] });
     rs.ports['run_memory'] = mem;
