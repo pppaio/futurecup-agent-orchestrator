@@ -226,6 +226,9 @@ export class Engine {
     if (!rs) throw new Error(`未知 run: ${runId}`);
     if (!rs.paused) throw new Error(`run 未处于暂停态: ${runId}`);
 
+    // 重置中断信号：上一轮 interrupt() 已 abort 过，不复位会让续跑后的调用瞬间被中止
+    rs.abortController = new AbortController();
+
     if (rs.pendingHumanNode) {
       // 人工确认点：完成该节点（接受 or 返工）
       const nodeId = rs.pendingHumanNode;
@@ -342,7 +345,8 @@ export class Engine {
   }
 
   private async runLoop(rs: RunState): Promise<void> {
-    while (rs.queue.length > 0) {
+    while (true) {
+      // 中断检查放在队列判空之前：在途节点被中止后即使队列已空也能正确暂停
       if (rs.interruptRequested) {
         rs.interruptRequested = false;
         rs.paused = true;
@@ -358,6 +362,7 @@ export class Engine {
         this.flushWaiters(rs);
         return;
       }
+      if (rs.queue.length === 0) break;
 
       // R3 状态剥离：一次取出至多 max_concurrency 个就绪节点，交给并发 Worker 执行。
       const batch: string[] = [];
@@ -372,7 +377,11 @@ export class Engine {
           humanPending = true;
           continue;
         }
-        if (d.kind === 'aborted') continue; // 用户中断导致的中止：不传播失败边，循环顶部会暂停
+        if (d.kind === 'aborted') {
+          // 用户中断中止的节点：重新入队，resume 后从头再跑（不传播失败边）
+          rs.queue.unshift(d.nodeId);
+          continue;
+        }
         this.propagateEdges(rs, d.nodeId, d.result);
 
         // §5.8：分析师产出阻塞性歧义 → 自动暂停转人工（批量实验可关）

@@ -4,13 +4,13 @@ import { PlaywrightSandbox } from './sandbox/sandbox.js';
 import { SingleHtmlPackager } from './packager/packager.js';
 import { ALL_AGENTS } from './agents/profiles.js';
 import { GAME_GEN_WF } from './workflows/game-gen.js';
-import type { LLMGateway, LLMMessage } from './gateway/llm.js';
+import type { LLMGateway, LLMMessage, LLMResult } from './gateway/llm.js';
 import type { AgentProfile } from './types.js';
 
 /** 慢网关：模拟一次 30 秒的模型调用；收到中断信号立即中止。 */
 class SlowLLM implements LLMGateway {
-  async complete(opts: { agent: AgentProfile; messages: LLMMessage[]; json?: boolean; signal?: AbortSignal }) {
-    await new Promise<void>((resolve, reject) => {
+  async complete(opts: { agent: AgentProfile; messages: LLMMessage[]; json?: boolean; signal?: AbortSignal }): Promise<LLMResult> {
+    await new Promise<void>((_resolve, reject) => {
       const t = setTimeout(() => reject(new Error('意外等到 30s')), 30_000);
       opts.signal?.addEventListener(
         'abort',
