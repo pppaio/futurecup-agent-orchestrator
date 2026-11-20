@@ -2,15 +2,17 @@ import express from 'express';
 import { readFileSync, existsSync, readdirSync, writeFileSync, appendFileSync, statSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { EventStore } from './event/store.js';
-import { MultiProviderLLM, providersFromEnv } from './gateway/llm.js';
-import type { ProviderConfig } from './gateway/llm.js';
+import { MultiProviderLLM, FakeLLM, providersFromEnv } from './gateway/llm.js';
+import type { LLMGateway, LLMMessage, ProviderConfig } from './gateway/llm.js';
 import { PlaywrightSandbox } from './sandbox/sandbox.js';
 import { SingleHtmlPackager } from './packager/packager.js';
 import { Engine } from './engine/engine.js';
 import { ALL_AGENTS } from './agents/profiles.js';
 import { GAME_GEN_WF } from './workflows/game-gen.js';
 import { AUTO_WF } from './workflows/auto-plan.js';
-import type { HardReport, RunEvent, RunId } from './types.js';
+import { SAMPLE_BROKEN_HTML } from './agents/sample-broken.js';
+import { SAMPLE_GAME_HTML } from './agents/sample-game.js';
+import type { AgentProfile, HardReport, RunEvent, RunId } from './types.js';
 
 try {
   process.loadEnvFile?.('.env');
@@ -75,7 +77,50 @@ const providers = providersFromEnv();
 const userProviders = loadUserProviders();
 for (const [id, p] of userProviders) providers.set(id, p);
 
-const llm = new MultiProviderLLM(providers);
+/** 演示模式（无任何 API Key）：Fake LLM 跑通全链路，评审零成本复现。 */
+function makeDemoFake(): FakeLLM {
+  let builderCalls = 0;
+  const good = JSON.stringify({ title: '打砖块', html: SAMPLE_GAME_HTML });
+  return new FakeLLM({
+    analyst: () =>
+      JSON.stringify({
+        goal: '可玩的打砖块',
+        graphic: true,
+        acceptance: ['页面加载无 console 报错', 'canvas 有非空像素', '球拍可左右控制且球与砖块碰撞'],
+        assumptions: ['单人、无存档'],
+        ambiguities: [],
+        tasks: [],
+        plan: [
+          { step: '搭画布与核心循环：球拍移动、球反弹、砖块碰撞', acceptance: ['canvas 渲染非空', '球拍可控制'] },
+          { step: '加计分与通关判定：计分板、砖块清零胜利提示', acceptance: ['计分显示正确'] },
+        ],
+      }),
+    builder: () => {
+      builderCalls++;
+      return builderCalls === 1
+        ? JSON.stringify({ title: 'broken', html: SAMPLE_BROKEN_HTML }) // 首版故意带错 → 演示修复闭环
+        : good;
+    },
+    'builder-flash': () => good,
+    critic: () => JSON.stringify({ score: 4, gaps: ['画面简陋，缺少计分显示'] }),
+    fixer: () => good,
+    reviser: () => good,
+  });
+}
+
+// 可切换网关：无 Key 时用 Fake 演示模式；用户在界面接入供应商后自动切到真实模式
+const llmBox: { current: LLMGateway } = {
+  current: providers.size > 0 ? new MultiProviderLLM(providers) : makeDemoFake(),
+};
+class SwitchableLLM implements LLMGateway {
+  complete(opts: { agent: AgentProfile; messages: LLMMessage[]; json?: boolean; signal?: AbortSignal }) {
+    return llmBox.current.complete(opts);
+  }
+}
+const llm: MultiProviderLLM | FakeLLM | SwitchableLLM = new SwitchableLLM();
+const realGateway = (): MultiProviderLLM | null =>
+  llmBox.current instanceof MultiProviderLLM ? llmBox.current : null;
+const isDemoMode = (): boolean => llmBox.current instanceof FakeLLM;
 
 const engine = new Engine({
   llm,
@@ -172,12 +217,13 @@ app.get('/api/health', (_req, res) => {
   } catch {
     /* 无 runs 目录 */
   }
-  res.json({ ok: true, model: [...providers.keys()].join('+') || 'none', runs: runCount });
+  res.json({ ok: true, model: isDemoMode() ? 'demo' : [...providers.keys()].join('+') || 'none', runs: runCount });
 });
 
-/** 可用供应商列表（不含 key）：{ id, name, models } */
+/** 可用供应商列表（不含 key）：{ id, name, models }；演示模式返回空列表 */
 app.get('/api/providers', (_req, res) => {
-  res.json(llm.getProviders());
+  const gw = realGateway();
+  res.json(gw ? gw.getProviders() : []);
 });
 
 /** 接入/更新一个供应商（用户在前端填 name/baseUrl/key/models）。key 不回传。 */
@@ -204,7 +250,11 @@ app.post('/api/providers', (req, res) => {
     supportsReasoningEffort: false,
     supportsResponseFormat: true,
   };
-  llm.addProvider(config);
+  // 接入供应商后：从演示模式切换到真实网关（引擎经 SwitchableLLM 无感切换）
+  providers.set(id, config);
+  if (llmBox.current instanceof FakeLLM) {
+    llmBox.current = new MultiProviderLLM(providers);
+  }
   userProviders.set(id, config);
   persistUserProviders(userProviders);
   res.json({ ok: true, provider: { id, name, models } });
@@ -217,7 +267,7 @@ app.delete('/api/providers/:id', (req, res) => {
     res.status(400).json({ error: '只能删除通过「接入 API」面板添加的供应商' });
     return;
   }
-  llm.removeProvider(id);
+  providers.delete(id);
   userProviders.delete(id);
   persistUserProviders(userProviders);
   res.json({ ok: true });
@@ -438,6 +488,6 @@ app.get('/api/runs/:id/artifact', (req, res) => {
 
 app.listen(PORT, () => {
   console.log(`后端已启动: http://localhost:${PORT}`);
-  console.log(`模型: ${[...providers.keys()].join('+') || 'none（可在界面「接入 API」添加）'}`);
+  console.log(`模型: ${isDemoMode() ? '演示模式（无 Key，Fake LLM）' : [...providers.keys()].join('+')}`);
   console.log(`健康检查: http://localhost:${PORT}/api/health`);
 });
