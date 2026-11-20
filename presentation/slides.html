@@ -127,20 +127,19 @@
   <div class="num">6 / 15</div>
 </section>
 
-<!-- P7 六角色 + DAG -->
+<!-- P7 五类角色 + DAG -->
 <section class="slide">
   <div class="kicker">多 Agent</div>
-  <h2>六个角色，一条带三重闭环的 DAG</h2>
+  <h2>五类角色（1 个不是 LLM），一条带三重闭环的 DAG</h2>
   <table>
     <tr><th>角色</th><th>职责</th><th>判定权</th></tr>
-    <tr><td>分析师 analyst</td><td>需求 → 可机械验收的规格 + 假设 + 歧义</td><td>—</td></tr>
-    <tr><td>生成者 builder</td><td>规格 → 单文件 HTML 产物</td><td>—</td></tr>
-    <tr><td>硬验证沙箱 hard-sandbox</td><td>无头浏览器实测：加载/报错/渲染/交互</td><td><span class="accent">能否运行（阻断）</span></td></tr>
-    <tr><td>软裁判 critic</td><td>对照验收条件打分 1-5 + 偏差</td><td>好不好 → <span class="accent">低分自动返工</span></td></tr>
+    <tr><td>分析师 analyst</td><td>需求 → 可机械验收的规格；返工轮读代码+差距+指令 → 修订规格+具体修改要求</td><td>—</td></tr>
+    <tr><td>生成者 builder</td><td>规格 → 单文件 HTML；返工轮基于上一版<span class="accent">增量修改</span></td><td>—</td></tr>
+    <tr><td>硬验证沙箱 hard-sandbox</td><td>无头浏览器实测：加载/报错/渲染/交互（<b>确定性脚本，非 LLM</b>）</td><td><span class="accent">能否运行（阻断）</span></td></tr>
+    <tr><td>软裁判 critic</td><td>对照验收条件打分 1-5 + 差距，<span class="accent">对比历史判进步/退步</span></td><td>好不好 → 未满分自动返工</td></tr>
     <tr><td>修复者 fixer</td><td>错误卡片/改进卡片 + 摘要 → 新版产物</td><td>—</td></tr>
-    <tr><td>修改者 reviser</td><td>完整旧产物 + 人工指令 → 增量改版</td><td>—</td></tr>
   </table>
-  <div class="sub" style="margin-top:18px">关键：<span class="accent">验证角色与执行角色是对抗关系</span>——多 Agent 值钱在对抗，不在数量。每角色模型/思考强度可独立配置（v4-pro / v4-flash × 低/中/高）。</div>
+  <div class="sub" style="margin-top:14px">关键：<span class="accent">验证角色与执行角色是对抗关系</span>。生成者有 builder / builder-flash 两个候选，调度器按成功率·速度·成本打分选择；每角色模型/供应商/思考强度可独立配置。</div>
   <div class="num">7 / 15</div>
 </section>
 
@@ -194,13 +193,13 @@
   <div class="num">10 / 15</div>
 </section>
 
-<!-- P11 人工确认 + 可复现 -->
+<!-- P11 人工确认 + 评分循环 + 回退 -->
 <section class="slide">
   <div class="kicker">差异化</div>
-  <h2>人工确认点 · 修改返工 · 版本回退</h2>
+  <h2>评分循环 · 人工确认 · 版本回退</h2>
   <div class="grid g2" style="margin-top:36px">
-    <div class="card"><h3>人工确认点 + 修改返工</h3><p>运行中随时中断插入指令；交付前流程<span class="accent">暂停等你拍板</span>：接受交付，或一句修改指令（"加个计分板"）打回——修改者拿到完整旧产物做增量改版，重新走验证闭环。用户中途接管 Agent 是行业公认的开放问题，我们给出了能跑的实现。</p></div>
-    <div class="card"><h3>版本化回退 + 可复现三件套</h3><p>每次交付写 <span style="font-family:Consolas">bundle-vN.html</span> 累积版本，旧版随时回退查看；每次运行落盘 <span style="font-family:Consolas">run.json</span> + <span style="font-family:Consolas">events.jsonl</span>，事件流可完整重放——快照 = 事件流末尾位置，不另建状态表。</p></div>
+    <div class="card"><h3>评分未满分 → 自动返工循环</h3><p>软裁判打分未达目标分 → 先把当前版本<span class="accent">打包留痕（bundle-vN）</span>→ 差距抛回分析师（读代码+差距+历史教训）→ 生成者<span class="accent">增量改版</span>→ 再评分，循环直到满分或轮次耗尽（默认 3 轮，可开 9 轮）。退步自动回滚到历史最优版本。</p></div>
+    <div class="card"><h3>人工确认点 + 版本回退</h3><p>交付前<span class="accent">暂停等你拍板</span>：接受，或一句修改指令返工（回分析师重新分析）。说"<span class="accent">返回第一版</span>"直接恢复该版本；每次运行落盘 <span style="font-family:Consolas">events.jsonl</span> + <span style="font-family:Consolas">bundle-vN</span> 全版本可追溯。</p></div>
   </div>
   <div class="num">11 / 15</div>
 </section>
