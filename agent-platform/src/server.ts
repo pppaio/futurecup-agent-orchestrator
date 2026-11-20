@@ -14,6 +14,8 @@ import { SAMPLE_BROKEN_HTML } from './agents/sample-broken.js';
 import { SAMPLE_GAME_HTML } from './agents/sample-game.js';
 import type { AgentProfile, HardReport, RunEvent, RunId } from './types.js';
 import { KnowledgeBase } from './kb.js';
+import { MemoryStore } from './memory.js';
+import { McpClient } from './mcp.js';
 
 try {
   process.loadEnvFile?.('.env');
@@ -123,6 +125,19 @@ const realGateway = (): MultiProviderLLM | null =>
   llmBox.current instanceof MultiProviderLLM ? llmBox.current : null;
 const isDemoMode = (): boolean => llmBox.current instanceof FakeLLM;
 
+// MCP 服务器（可选）：MCP_CMD + MCP_ARGS 指定命令与参数（stdio 传输），如
+// MCP_CMD=npx  MCP_ARGS="tsx examples/mcp-calculator-server.ts"
+const mcpClients: McpClient[] = [];
+const mcpCmd = process.env.MCP_CMD;
+if (mcpCmd) {
+  const client = new McpClient(mcpCmd, (process.env.MCP_ARGS ?? '').split(' ').filter(Boolean), true);
+  mcpClients.push(client);
+  client
+    .init()
+    .then(() => console.log(`MCP 服务器已连接，工具: ${client.getTools().map((t) => t.name).join(', ')}`))
+    .catch((e) => console.warn('MCP 连接失败:', String(e)));
+}
+
 const engine = new Engine({
   llm,
   sandbox: new PlaywrightSandbox(),
@@ -130,6 +145,8 @@ const engine = new Engine({
   store,
   agents: ALL_AGENTS,
   kb: new KnowledgeBase(join(process.cwd(), 'knowledge')),
+  memory: new MemoryStore(join(process.cwd(), 'runs')),
+  mcp: mcpClients,
 });
 
 const app = express();

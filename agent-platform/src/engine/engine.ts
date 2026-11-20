@@ -22,6 +22,8 @@ import type { Packager } from '../packager/packager.js';
 import { normalizeErrors, summarizeArtifact } from '../reducer.js';
 import { LoopWatchdog } from './watchdog.js';
 import type { KnowledgeBase } from '../kb.js';
+import type { MemoryStore } from '../memory.js';
+import type { McpClient } from '../mcp.js';
 
 export interface EngineOptions {
   llm: LLMGateway;
@@ -33,6 +35,10 @@ export interface EngineOptions {
   humanGate?: boolean;
   /** 轻量知识库（Function Calling 工具 kb_search 的数据源）。 */
   kb?: KnowledgeBase;
+  /** 跨运行记忆（修复教训持久化与检索）。 */
+  memory?: MemoryStore;
+  /** MCP 客户端列表（协议：JSON-RPC over stdio）。 */
+  mcp?: McpClient[];
 }
 
 /** 单次运行的 per-agent 覆盖：换供应商 / 换模型 / 调思考强度。 */
@@ -96,6 +102,9 @@ interface RunState {
   schedulerWeights?: { w_succ: number; w_speed: number; w_cost: number };
   /** 运行级中断信号：interrupt() 时中止所有在途 LLM/沙箱调用（加速中断）。 */
   abortController: AbortController;
+  /** 跨运行记忆采样：本运行是否有过硬验证失败 + 代表性错误文本。 */
+  hadHardFailures: boolean;
+  lastErrorCards?: string[];
   waiters: (() => void)[];
 }
 
@@ -185,6 +194,7 @@ export class Engine {
       interruptRequested: false,
       schedulerWeights: startOpts.schedulerWeights,
       abortController: new AbortController(),
+      hadHardFailures: false,
       waiters: [],
     };
     this.runs.set(runId, rs);
@@ -430,6 +440,16 @@ export class Engine {
     const hasVerify = rs.wf.nodes.some((n) => n.type === 'verify');
     const finalStatus = hasVerify && !rs.verifyPassed ? 'failed' : 'done';
 
+    // 跨运行记忆：把本次硬修复的教训写入 memory.json（成功与否都记，供后续运行检索）
+    if (this.opts.memory && rs.hadHardFailures && rs.lastErrorCards && rs.lastErrorCards.length > 0) {
+      this.opts.memory.add({
+        error: rs.lastErrorCards[0] ?? '',
+        rounds: rs.errorCurve.length,
+        success: rs.verifyPassed,
+        at: Date.now(),
+      });
+    }
+
     const agentIds = [...new Set([...rs.states.values()].map((s) => s.node.agent).filter((a): a is string => !!a))];
     writeFileSync(
       join(rs.runDir, 'run.json'),
@@ -479,7 +499,7 @@ export class Engine {
     return inputs;
   }
 
-  /** 角色工具白名单 → Function Calling 工具定义。 */
+  /** 角色工具白名单 → Function Calling 工具定义（内置工具 + MCP 服务器工具）。 */
   private toolDefs(profile: AgentProfile): ToolDef[] {
     const defs: ToolDef[] = [];
     if (profile.tools.includes('kb_search') && this.opts.kb) {
@@ -495,6 +515,14 @@ export class Engine {
         description: '用无头浏览器自检一段单文件 HTML：能否加载、有无控制台报错、DOM 内容是否非空。返回 { ok, errors, load_ms, first_error }。定稿前建议自检一次。',
         parameters: { type: 'object', properties: { html: { type: 'string', description: '完整 HTML 源码' } }, required: ['html'] },
       });
+    }
+    // MCP 服务器工具：角色工具白名单声明 'mcp' 时并入全部已连接服务器的工具
+    if (profile.tools.includes('mcp') && this.opts.mcp) {
+      for (const client of this.opts.mcp) {
+        for (const t of client.getTools()) {
+          defs.push({ name: t.name, description: `[MCP] ${t.description}`, parameters: t.inputSchema });
+        }
+      }
     }
     return defs;
   }
@@ -519,6 +547,14 @@ export class Engine {
         first_error: report.errors[0]?.message ?? '',
         load_ms: report.load_ms,
       };
+    }
+    // MCP 服务器工具
+    if (this.opts.mcp) {
+      for (const client of this.opts.mcp) {
+        if (client.getTools().some((t) => t.name === name)) {
+          return client.call(name, args);
+        }
+      }
     }
     return { error: `未知工具 ${name}` };
   }
@@ -775,6 +811,20 @@ export class Engine {
       });
     }
 
+    // 跨运行记忆：修复者遇到相似历史错误时，注入历史处理记录
+    if (profile.id === 'fixer' && this.opts.memory) {
+      const cards = ports['error_cards'];
+      if (Array.isArray(cards) && cards.length > 0) {
+        const lessons = this.opts.memory.retrieve(cards.map((c) => (c as { message?: string }).message ?? String(c)).join(' '));
+        if (lessons.length > 0) {
+          messages.push({
+            role: 'user',
+            content: `[历史经验] 过去运行中相似错误的处理记录：${JSON.stringify(lessons)}。参考其轮次与成败，优先尝试此前成功的思路。`,
+          });
+        }
+      }
+    }
+
     // 评分未满返工 / 人工确认点返工：把裁判差距 + 用户指令抛回分析师，要求读代码给针对性优化方案（增量，不重做）
     const qualityCards = ports['quality_cards'];
     const instruction = ports['instruction'];
@@ -892,8 +942,12 @@ export class Engine {
     this.emit({ run_id: rs.runId, node_id: node.id, type: 'verify.hard.result', payload: report as unknown as Record<string, unknown> });
 
     if (!report.ok) {
-      rs.ports['error_cards'] = normalizeErrors(report, { requireCanvas });
+      const cards = normalizeErrors(report, { requireCanvas });
+      rs.ports['error_cards'] = cards;
       rs.ports['artifact_summary'] = summarizeArtifact(html);
+      // 跨运行记忆采样
+      rs.hadHardFailures = true;
+      rs.lastErrorCards = cards.map((c) => c.message);
     }
     return { pass: report.ok, output: report };
   }
