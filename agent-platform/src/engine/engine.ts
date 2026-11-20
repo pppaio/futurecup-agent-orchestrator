@@ -16,11 +16,12 @@ import {
   SoftReportSchema,
 } from '../types.js';
 import { EventStore } from '../event/store.js';
-import type { LLMGateway, LLMMessage } from '../gateway/llm.js';
+import type { LLMGateway, LLMMessage, ToolDef } from '../gateway/llm.js';
 import type { Sandbox } from '../sandbox/sandbox.js';
 import type { Packager } from '../packager/packager.js';
 import { normalizeErrors, summarizeArtifact } from '../reducer.js';
 import { LoopWatchdog } from './watchdog.js';
+import type { KnowledgeBase } from '../kb.js';
 
 export interface EngineOptions {
   llm: LLMGateway;
@@ -30,6 +31,8 @@ export interface EngineOptions {
   agents: Map<string, AgentProfile>;
   /** §5.8 歧义停机 + 人工确认点开关：交互模式开，批量实验关（避免跑批时卡在暂停）。 */
   humanGate?: boolean;
+  /** 轻量知识库（Function Calling 工具 kb_search 的数据源）。 */
+  kb?: KnowledgeBase;
 }
 
 /** 单次运行的 per-agent 覆盖：换供应商 / 换模型 / 调思考强度。 */
@@ -476,6 +479,50 @@ export class Engine {
     return inputs;
   }
 
+  /** 角色工具白名单 → Function Calling 工具定义。 */
+  private toolDefs(profile: AgentProfile): ToolDef[] {
+    const defs: ToolDef[] = [];
+    if (profile.tools.includes('kb_search') && this.opts.kb) {
+      defs.push({
+        name: 'kb_search',
+        description: '检索项目知识库（单文件前端规范 / 小游戏设计要点 / 常见报错修复手册），返回相关条目。不确定规范或修复方法时先查这里。',
+        parameters: { type: 'object', properties: { query: { type: 'string', description: '检索关键词或问题描述' } }, required: ['query'] },
+      });
+    }
+    if (profile.tools.includes('verify_html')) {
+      defs.push({
+        name: 'verify_html',
+        description: '用无头浏览器自检一段单文件 HTML：能否加载、有无控制台报错、DOM 内容是否非空。返回 { ok, errors, load_ms, first_error }。定稿前建议自检一次。',
+        parameters: { type: 'object', properties: { html: { type: 'string', description: '完整 HTML 源码' } }, required: ['html'] },
+      });
+    }
+    return defs;
+  }
+
+  /** 工具执行器（引擎侧持有沙箱与知识库；执行结果以事件留痕）。 */
+  private async executeTool(rs: RunState, name: string, args: Record<string, unknown>): Promise<unknown> {
+    if (name === 'kb_search' && this.opts.kb) {
+      const query = String(args.query ?? '');
+      return this.opts.kb.retrieve(query, 3).map((c) => ({ title: c.title, text: c.text.slice(0, 600) }));
+    }
+    if (name === 'verify_html') {
+      const html = String(args.html ?? '');
+      if (!html) return { error: '缺少 html 参数' };
+      const report = await this.opts.sandbox.run(html, {
+        timeoutMs: 15000,
+        requireCanvas: false,
+        signal: rs.abortController.signal,
+      });
+      return {
+        ok: report.ok,
+        errors: report.errors.length,
+        first_error: report.errors[0]?.message ?? '',
+        load_ms: report.load_ms,
+      };
+    }
+    return { error: `未知工具 ${name}` };
+  }
+
   /**
    * 智能调度：节点声明 candidates 时，按打分择一。
    * score = w_succ·成功率 + w_speed·速度 + w_cost·便宜度（每项归一化到 0~1）。
@@ -773,7 +820,31 @@ export class Engine {
       this.emit({ run_id: rs.runId, node_id: node.id, agent_id: profile.id, type: 'agent.message', payload: { role: m.role, text: m.content } });
     }
 
-    const res = await this.opts.llm.complete({ agent: profile, messages, json: true, signal: rs.abortController.signal });
+    const res = await this.opts.llm.complete({
+      agent: profile,
+      messages,
+      json: true,
+      signal: rs.abortController.signal,
+      tools: this.toolDefs(profile),
+      executeTool: async (name, args) => {
+        this.emit({
+          run_id: rs.runId,
+          node_id: node.id,
+          agent_id: profile.id,
+          type: 'agent.tool.call',
+          payload: { tool: name, args: { ...args, html: undefined } },
+        });
+        const result = await this.executeTool(rs, name, args);
+        this.emit({
+          run_id: rs.runId,
+          node_id: node.id,
+          agent_id: profile.id,
+          type: 'agent.tool.result',
+          payload: { tool: name, result: typeof result === 'string' ? result.slice(0, 800) : JSON.stringify(result).slice(0, 800) },
+        });
+        return result;
+      },
+    });
     this.emit({ run_id: rs.runId, node_id: node.id, agent_id: profile.id, type: 'agent.message', payload: { role: 'assistant', text: res.text } });
 
     let parsed: unknown;

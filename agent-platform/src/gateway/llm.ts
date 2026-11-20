@@ -17,12 +17,20 @@ export interface LLMResult {
   usage: LLMUsage;
 }
 
+export interface ToolDef {
+  name: string;
+  description: string;
+  parameters: Record<string, unknown>;
+}
+
 export interface LLMGateway {
   complete(opts: {
     agent: AgentProfile;
     messages: LLMMessage[];
     json?: boolean;
     signal?: AbortSignal; // 运行中断时中止在途调用（加速中断）
+    tools?: ToolDef[]; // Function Calling：可用工具定义
+    executeTool?: (name: string, args: Record<string, unknown>) => Promise<unknown>; // 工具执行器
   }): Promise<LLMResult>;
 }
 
@@ -84,7 +92,14 @@ export class MultiProviderLLM implements LLMGateway {
     this.providers.delete(id);
   }
 
-  async complete(opts: { agent: AgentProfile; messages: LLMMessage[]; json?: boolean; signal?: AbortSignal }): Promise<LLMResult> {
+  async complete(opts: {
+    agent: AgentProfile;
+    messages: LLMMessage[];
+    json?: boolean;
+    signal?: AbortSignal;
+    tools?: ToolDef[];
+    executeTool?: (name: string, args: Record<string, unknown>) => Promise<unknown>;
+  }): Promise<LLMResult> {
     const providerId = opts.agent.model.provider ?? 'deepseek';
     const provider = this.providers.get(providerId);
     if (!provider) throw new Error(`未配置供应商 '${providerId}'（在 .env 添加 PROVIDER_${providerId.toUpperCase()}_BASE/_KEY/_MODELS）`);
@@ -94,6 +109,7 @@ export class MultiProviderLLM implements LLMGateway {
     }
 
     const effortMap = { low: 'low', medium: 'high', high: 'max' } as const;
+    const hasTools = !!opts.tools && opts.tools.length > 0;
     const body: Record<string, unknown> = {
       model,
       messages: opts.messages,
@@ -106,28 +122,82 @@ export class MultiProviderLLM implements LLMGateway {
         body.reasoning_effort = effortMap[opts.agent.thinking_effort] ?? 'high';
       }
     }
-    if (opts.json && provider.supportsResponseFormat !== false) {
+    if (hasTools) {
+      body.tools = opts.tools!.map((t) => ({ type: 'function', function: { name: t.name, description: t.description, parameters: t.parameters } }));
+      body.tool_choice = 'auto';
+      // 带工具时不用 response_format（部分供应商二者互斥），JSON 约束靠提示词
+    } else if (opts.json && provider.supportsResponseFormat !== false) {
       body.response_format = { type: 'json_object' };
     }
 
-    // R2 超时熔断（10 分钟）+ 运行中断信号（加速中断），二者谁先到谁中止
+    // R2 超时熔断（10 分钟）+ 运行中断信号（加速中断）
     const signals = [AbortSignal.timeout(600_000)];
     if (opts.signal) signals.push(opts.signal);
     const signal = AbortSignal.any(signals);
-    try {
+
+    // Function Calling 循环：模型调用工具 → 执行 → 结果回填 → 继续，直到给出最终内容
+    type ApiMessage = { role: string; content: string | null; tool_calls?: unknown[]; tool_call_id?: string };
+    const msgs: ApiMessage[] = opts.messages.map((m) => ({ role: m.role, content: m.content }));
+    for (let round = 0; round < 6; round++) {
       const res = await fetch(`${provider.baseUrl}/chat/completions`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           Authorization: `Bearer ${provider.apiKey}`,
         },
-        body: JSON.stringify(body),
+        body: JSON.stringify({ ...body, messages: msgs }),
         signal,
       });
-      return await this.handleResponse(res, opts, provider);
-    } finally {
-      /* AbortSignal.any 无需手动清理 */
+      if (!res.ok) {
+        const errText = await res.text().catch(() => '');
+        throw new Error(`${provider.name} API ${res.status}: ${errText.slice(0, 500)}`);
+      }
+      const data = (await res.json()) as {
+        choices: { message: { content?: string; tool_calls?: { id: string; type: string; function: { name: string; arguments?: string } }[] } }[];
+        usage?: { prompt_tokens: number; completion_tokens: number; completion_tokens_details?: { reasoning_tokens?: number } };
+      };
+      this.total.calls++;
+      this.total.input += data.usage?.prompt_tokens ?? 0;
+      this.total.output += data.usage?.completion_tokens ?? 0;
+      this.total.reasoning += data.usage?.completion_tokens_details?.reasoning_tokens ?? 0;
+
+      const msg = data.choices?.[0]?.message;
+      const toolCalls = msg?.tool_calls ?? [];
+      if (toolCalls.length > 0 && opts.executeTool) {
+        msgs.push({ role: 'assistant', content: msg?.content ?? null, tool_calls: toolCalls });
+        for (const tc of toolCalls) {
+          let args: Record<string, unknown> = {};
+          try {
+            args = JSON.parse(tc.function.arguments ?? '{}') as Record<string, unknown>;
+          } catch {
+            args = {};
+          }
+          let result: unknown;
+          try {
+            result = await opts.executeTool(tc.function.name, args);
+          } catch (e) {
+            result = { error: String(e) };
+          }
+          msgs.push({ role: 'tool', tool_call_id: tc.id, content: typeof result === 'string' ? result : JSON.stringify(result) });
+        }
+        continue;
+      }
+      const content = msg?.content ?? '';
+      let json: unknown;
+      if (opts.json) {
+        try { json = JSON.parse(content); } catch { throw new Error(`${provider.name} 返回了非法 JSON：${content.slice(0, 300)}`); }
+      }
+      return {
+        text: content,
+        json,
+        usage: {
+          inputTokens: data.usage?.prompt_tokens ?? 0,
+          outputTokens: data.usage?.completion_tokens ?? 0,
+          reasoningTokens: data.usage?.completion_tokens_details?.reasoning_tokens,
+        },
+      };
     }
+    throw new Error(`${provider.name} 工具调用超过 6 轮未收敛`);
   }
 
   private async handleResponse(

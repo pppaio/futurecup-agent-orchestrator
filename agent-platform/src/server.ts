@@ -13,6 +13,7 @@ import { AUTO_WF } from './workflows/auto-plan.js';
 import { SAMPLE_BROKEN_HTML } from './agents/sample-broken.js';
 import { SAMPLE_GAME_HTML } from './agents/sample-game.js';
 import type { AgentProfile, HardReport, RunEvent, RunId } from './types.js';
+import { KnowledgeBase } from './kb.js';
 
 try {
   process.loadEnvFile?.('.env');
@@ -128,6 +129,7 @@ const engine = new Engine({
   packager: new SingleHtmlPackager(),
   store,
   agents: ALL_AGENTS,
+  kb: new KnowledgeBase(join(process.cwd(), 'knowledge')),
 });
 
 const app = express();

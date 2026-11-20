@@ -19,14 +19,15 @@ export const BUILDER_PROFILE: AgentProfile = {
     '5. 若规格 graphic=false（工具类），用 DOM 控件（按钮/输入框/文本/计时显示）实现完整界面，不要强行用 canvas。',
     '6. 只输出 JSON 对象本身，html 是转义后的字符串，不要用 markdown 代码块包裹。',
     '7. 【返工轮】输入若包含上一版产物 artifact 与规格中的 changes 修改要求：在上一版代码基础上逐条落实 changes 做增量修改，保留其余逻辑不动，不要推倒重做。首轮（无 artifact）则从零生成。',
+    '8. 【工具】定稿前可用 verify_html 工具自检产物；对单文件约束、画布规范、设计要点不确定时用 kb_search 查知识库。',
   ].join('\n'),
   thinking_effort: 'high',
   model: { provider: 'deepseek', name: 'deepseek-v4-pro', temperature: 0.3 },
   capabilities: ['codegen'],
-  tools: [],
+  tools: ['verify_html', 'kb_search'],
   memory: { scope: 'run', retrieve_top_k: 4 },
   output_schema: 'HtmlArtifact',
-  io: { inputs: ['spec'], outputs: ['artifact'] },
+  io: { inputs: ['spec', 'artifact'], outputs: ['artifact'] },
   // 调度打分依据（pro 版：成功率来自 bench 实测 19/20）
   metrics: { success_rate: 0.95, avg_latency_ms: 203000, cost_tier: 3 },
 };

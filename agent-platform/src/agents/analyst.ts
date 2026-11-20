@@ -27,7 +27,7 @@ export const ANALYST_PROFILE: AgentProfile = {
   thinking_effort: 'medium',
   model: { provider: 'deepseek', name: 'deepseek-v4-pro', temperature: 0.2 },
   capabilities: ['decompose', 'spec'],
-  tools: [],
+  tools: ['kb_search'],
   memory: { scope: 'run', retrieve_top_k: 4 },
   output_schema: 'DecompositionSpec',
   io: { inputs: ['req', 'spec', 'quality_cards', 'artifact', 'instruction', 'run_memory'], outputs: ['spec'] },

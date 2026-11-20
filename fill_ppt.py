@@ -1,4 +1,4 @@
-# -*- coding: utf-8 -*-
+﻿# -*- coding: utf-8 -*-
 """按官方模版填充讲解 PPT：封面/目录/节标题/内容页/谢谢。"""
 import copy, sys
 sys.stdout.reconfigure(encoding='utf-8')
@@ -8,7 +8,7 @@ from pptx.dml.color import RGBColor
 from pptx.enum.text import PP_ALIGN
 
 TPL = r"C:\Users\Gandafu\.dsh\attachments\v1\files\72\72792fe34cf49d7c0b047ba4970876fca78c54d751b5db1eff40ded037ce40e9\2026未来杯PPT模版.pptx"
-OUT = r"C:\Users\Gandafu\Desktop\kuangjia\docs\讲解PPT-按模版.pptx"
+OUT = r"C:\Users\Gandafu\Desktop\kuangjia\docs\讲解PPT-按模版-v2.pptx"
 
 prs = Presentation(TPL)
 
@@ -168,7 +168,7 @@ new_content_slide('五个核心模块齐备且逻辑连贯', [
     'Agent 团队定义与管理：AgentProfile（提示词/能力标签/模型/调度指标），动态注册与候选池',
     '工作流编排：JSON DAG——顺序/并行/条件/循环/子工作流，六类节点',
     '智能调度引擎：就绪队列+并发上限，pickAgent 按成功率·速度·成本打分，质量优先/省流双档',
-    '工具与外部系统集成：多供应商 LLM 网关（DeepSeek/千问等）+ Playwright 沙箱，界面直接接入 Key',
+    '工具与外部系统集成：Function Calling 真实工具（verify_html 沙箱自检 / kb_search 知识库检索）+ 多供应商 LLM 网关（界面接 Key）+ Playwright 沙箱',
     '执行监控与结果验证：18 类事件流 + SSE 直推 + 硬验证（非 LLM）+ 软裁判',
     '反馈与自我优化：三层循环（硬修复/评分返工/人工返工）+ 退步回滚 + 版本追溯',
     '零成本可复现：无 API Key 自动进入演示模式（Fake LLM）',
@@ -188,8 +188,8 @@ new_content_slide('三层架构 + 事件溯源（18 类事件）', [
     '约 5,900 行 TypeScript / 43 文件 / 54 次提交全可追溯',
 ])
 new_content_slide('五类角色（1 个不是 LLM）+ 智能调度', [
-    '分析师：需求→可机械验收规格；返工轮读代码+差距+指令→修订规格+具体修改要求',
-    '生成者：规格→单文件 HTML；返工轮基于上一版增量修改（不推倒重做）',
+    '分析师：需求→可机械验收规格；返工轮读代码+差距+指令→修订规格+具体修改要求；可 kb_search 查知识库',
+    '生成者：规格→单文件 HTML；返工轮基于上一版增量修改（不推倒重做）；定稿前可 verify_html 自检',
     '硬校验器（确定性脚本）：加载/报错/渲染/交互判定——能否运行（阻断）',
     '软裁判：1~5 分+差距；对比历史判进步/退步——未满分自动返工',
     '修复者：错误卡片+摘要→新产物（只喂卡片，控 token）',
@@ -257,3 +257,4 @@ for sldId in desired:
 prs.save(OUT)
 print('已保存:', OUT)
 print('展示页数:', len(prs.slides._sldIdLst))
+

@@ -21,7 +21,7 @@ export const FIXER_PROFILE: AgentProfile = {
   thinking_effort: 'high',
   model: { provider: 'deepseek', name: 'deepseek-v4-pro', temperature: 0.3 },
   capabilities: ['codegen', 'fix'],
-  tools: [],
+  tools: ['verify_html'],
   memory: { scope: 'run', retrieve_top_k: 4 },
   output_schema: 'HtmlArtifact',
   io: { inputs: ['spec', 'error_cards', 'quality_cards', 'artifact_summary'], outputs: ['artifact'] },
