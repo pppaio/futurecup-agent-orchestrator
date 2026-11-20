@@ -1,4 +1,4 @@
-﻿# -*- coding: utf-8 -*-
+# -*- coding: utf-8 -*-
 """按官方模版填充讲解 PPT：封面/目录/节标题/内容页/谢谢。"""
 import copy, sys
 sys.stdout.reconfigure(encoding='utf-8')
@@ -52,13 +52,15 @@ font_content_title = font_of(s4.shapes[0])
 def set_text(sh, lines, size=None, bold=None, font_name=None, align=None, color=None):
     tf = sh.text_frame
     tf.word_wrap = True
-    for i, para in enumerate(tf.paragraphs):
-        for run in para.runs:
-            run.text = ''
-    first = True
-    for ln in lines:
-        p = tf.paragraphs[0] if first else tf.add_paragraph()
-        first = False
+    # 只保留第一个段落，其余删除（模板占位段落会残留空行）
+    while len(tf.paragraphs) > 1:
+        p = tf.paragraphs[-1]._p
+        p.getparent().remove(p)
+    # 清空第一段的既有 run
+    for r in list(tf.paragraphs[0].runs):
+        r._r.getparent().remove(r._r)
+    for i, ln in enumerate(lines):
+        p = tf.paragraphs[0] if i == 0 else tf.add_paragraph()
         if align is not None:
             p.alignment = align
         r = p.add_run()
@@ -72,10 +74,6 @@ def set_text(sh, lines, size=None, bold=None, font_name=None, align=None, color=
             f.bold = bold
         if color is not None:
             f.color.rgb = color
-    # 清掉多余段落
-    while len(tf.paragraphs) > len(lines):
-        p = tf.paragraphs[len(lines)]._p
-        p.getparent().remove(p)
 
 def add_box(slide, left, top, width, height, lines, size=14, bold=False, font_name='思源黑体 Normal', color=RGBColor(0x33, 0x33, 0x33), bullet=False):
     from pptx.enum.shapes import MSO_SHAPE
@@ -107,7 +105,7 @@ keep_order = all_ids[:2]  # P1封面 P2目录（就地改写）；P3/P4 的模�
 
 # ---------- P1 封面 ----------
 set_text(prs.slides[0].shapes[0], ['一句话需求', '→ 确定可运行的软件产物'], font_name=font_cover_title[0], size=font_cover_title[1].pt if font_cover_title[1] else 32, bold=True)
-set_text(prs.slides[0].shapes[1], ['多智能体编排调度平台', '团队名称：____________    演讲人：____________', '指导教师：____________    学校：____________'], font_name=font_cover_meta[0], size=font_cover_meta[1].pt if font_cover_meta[1] else 20, bold=font_cover_meta[2])
+set_text(prs.slides[0].shapes[1], ['Agent编排平台', '团队名称：自定义名称1队    演讲人：吴华杰', '指导教师：无    学校：岭南师范学院'], font_name=font_cover_meta[0], size=font_cover_meta[1].pt if font_cover_meta[1] else 20, bold=font_cover_meta[2])
 
 # ---------- P2 目录 ----------
 set_text(prs.slides[1].shapes[0], [
@@ -258,6 +256,7 @@ for sldId in desired:
 prs.save(OUT)
 print('已保存:', OUT)
 print('展示页数:', len(prs.slides._sldIdLst))
+
 
 
 
