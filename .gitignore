@@ -6,3 +6,10 @@ dist/
 .DS_Store
 ppt_text.txt
 .dsh-vision-router/
+# 临时提取/调试文件（不提交）
+notice_text.txt
+tpl_text.txt
+pdf_text.txt
+_extract.py
+_probe.py
+tools/
