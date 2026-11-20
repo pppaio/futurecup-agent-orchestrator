@@ -15,3 +15,9 @@ _probe.py
 tools/
 ~$*
 _tpl_inspect.txt
+
+# 非运行必要的提交材料（本地保留，不进仓库）
+/docs/
+/presentation/
+/fill_ppt.py
+/项目白皮书.md
