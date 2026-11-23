@@ -948,3 +948,5 @@ a.btn {
 .empty-dash-icon { font-size: 44px; margin-bottom: 14px; }
 .empty-dash h2 { color: #cbd5e1; margin-bottom: 10px; }
 .empty-dash p { margin-bottom: 18px; font-size: 14px; }
+
+.api-presets { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-bottom: 10px; }

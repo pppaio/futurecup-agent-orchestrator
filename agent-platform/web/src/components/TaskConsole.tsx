@@ -83,6 +83,14 @@ export function TaskConsole({ requirement, setRequirement, onStarted, health }: 
   const [mode, setMode] = useState<'fixed' | 'auto'>(() => loadLS('mode', 'fixed'));
   const [apiForm, setApiForm] = useState({ name: '', baseUrl: '', apiKey: '', models: '' });
   const [apiMsg, setApiMsg] = useState<string | null>(null);
+
+  // 常见供应商速填（只留 API Key 给用户贴）
+  const PROVIDER_PRESETS: { name: string; baseUrl: string; models: string }[] = [
+    { name: 'DeepSeek', baseUrl: 'https://api.deepseek.com', models: 'deepseek-chat,deepseek-reasoner' },
+    { name: '通义千问', baseUrl: 'https://dashscope.aliyuncs.com/compatible-mode/v1', models: 'qwen-max,qwen-plus' },
+    { name: 'Kimi', baseUrl: 'https://api.moonshot.cn/v1', models: 'moonshot-v1-8k,moonshot-v1-32k' },
+    { name: '智谱GLM', baseUrl: 'https://open.bigmodel.cn/api/paas/v4', models: 'glm-4-plus,glm-4-flash' },
+  ];
   const [limits, setLimits] = useState(() => loadLS('limits', DEFAULT_LIMITS));
 
   // 任何设置变化都持久化（防止运行后切页重置为默认值）
@@ -120,6 +128,11 @@ export function TaskConsole({ requirement, setRequirement, onStarted, health }: 
     const models = apiForm.models.split(',').map((s) => s.trim()).filter(Boolean);
     if (models.length === 0) {
       setApiMsg('模型列表不能为空：请至少填一个模型名（多个用英文逗号分隔，如 gpt-4o,gpt-4o-mini）。没有模型名，角色配置下拉里就不会出现任何选项。');
+      return;
+    }
+    // Base URL 启发式警告：填了控制台/密钥管理页面地址而不是 API 接口地址
+    const looksLikeConsole = /platform\.|console\.|api_keys|apikey\//i.test(apiForm.baseUrl);
+    if (looksLikeConsole && !window.confirm('这个 Base URL 看起来是控制台/密钥管理页面，不是 API 接口地址。\n正确示例：DeepSeek 填 https://api.deepseek.com；通义千问填 https://dashscope.aliyuncs.com/compatible-mode/v1；Kimi 填 https://api.moonshot.cn/v1\n\n仍要按现在的内容保存吗？')) {
       return;
     }
     try {
@@ -366,7 +379,19 @@ export function TaskConsole({ requirement, setRequirement, onStarted, health }: 
       {/* ③ 接入 API（常开） */}
       <div className="console-card config-panel">
         <div className="config-head">
-          <span className="field-label">接入 API：填你自己的供应商（OpenAI 兼容口径：通义/智谱/月之暗面/OpenAI 等）</span>
+          <span className="field-label">接入 API：填你自己的供应商（OpenAI 兼容口径：DeepSeek/通义千问/Kimi/智谱/OpenAI 等）</span>
+        </div>
+        <div className="api-presets">
+          <span className="config-hint">常见供应商点一下自动填好（只需贴 Key）：</span>
+          {PROVIDER_PRESETS.map((p) => (
+            <button
+              key={p.name}
+              className="btn btn-ghost"
+              onClick={() => setApiForm((f) => ({ ...f, name: p.name, baseUrl: p.baseUrl, models: p.models, apiKey: '' }))}
+            >
+              {p.name}
+            </button>
+          ))}
         </div>
         <div className="api-form">
           <input
