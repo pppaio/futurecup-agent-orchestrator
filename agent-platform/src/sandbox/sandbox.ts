@@ -40,7 +40,16 @@ function canvasProbe(): boolean {
 export class PlaywrightSandbox implements Sandbox {
   async run(html: string, opts: SandboxOpts): Promise<HardReport> {
     if (opts.signal?.aborted) throw new DOMException('已中断', 'AbortError');
-    const browser = await chromium.launch({ headless: true });
+    let browser;
+    try {
+      browser = await chromium.launch({ headless: true });
+    } catch (e) {
+      const msg = String(e);
+      if (msg.includes("Executable doesn't exist") || msg.includes('browserType.launch')) {
+        throw new Error('无头浏览器未安装或下载不完整。请在项目目录（agent-platform）执行：npx playwright install chromium，完成后重试。');
+      }
+      throw e;
+    }
     const page = await browser.newPage({ viewport: { width: 640, height: 480 } });
     const errors: HardReport['errors'] = [];
     const onAbort = () => {

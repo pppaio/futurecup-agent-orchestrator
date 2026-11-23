@@ -23,11 +23,9 @@ call npm install
 if errorlevel 1 goto install-failed
 :skip-install
 
-if exist "%LOCALAPPDATA%\ms-playwright" goto skip-browser
-echo [2/4] First run: downloading headless Chromium, about 100MB, once...
+echo [2/4] Checking headless Chromium, downloads once on first run...
 call npx playwright install chromium
 if errorlevel 1 goto browser-failed
-:skip-browser
 
 echo [3/4] Starting server. Frontend auto-builds on first run...
 start "" http://localhost:3000
