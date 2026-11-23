@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { addProvider, getProviders, removeProvider, startRun } from '../api';
+import { addProvider, getProviders, removeProvider, startRun, testProvider } from '../api';
 import type { AgentConfig, AgentConfigItem, HealthInfo, ProviderInfo } from '../types';
 
 interface Props {
@@ -145,6 +145,22 @@ export function TaskConsole({ requirement, setRequirement, onStarted, health }: 
       setApiMsg(`已接入「${apiForm.name.trim()}」`);
       setApiForm({ name: '', baseUrl: '', apiKey: '', models: '' });
       setProviders(await getProviders());
+    } catch (e) {
+      setApiMsg(e instanceof Error ? e.message : String(e));
+    }
+  }
+
+  async function fetchModels() {
+    setApiMsg(null);
+    if (!apiForm.baseUrl.trim() || !apiForm.apiKey.trim()) {
+      setApiMsg('先填 Base URL 和 API Key，再点「自动获取模型列表」');
+      return;
+    }
+    setApiMsg('正在向该供应商查询真实模型列表…');
+    try {
+      const { models } = await testProvider({ baseUrl: apiForm.baseUrl.trim(), apiKey: apiForm.apiKey.trim() });
+      setApiForm((f) => ({ ...f, models: models.join(',') }));
+      setApiMsg(`已获取 ${models.length} 个真实模型名并自动填入：${models.slice(0, 6).join(', ')}${models.length > 6 ? '…' : ''}`);
     } catch (e) {
       setApiMsg(e instanceof Error ? e.message : String(e));
     }
@@ -421,6 +437,9 @@ export function TaskConsole({ requirement, setRequirement, onStarted, health }: 
           />
           <button className="btn btn-primary" onClick={submitApi}>
             保存供应商
+          </button>
+          <button className="btn btn-ghost" onClick={fetchModels} title="向该供应商接口查询真实模型名，自动填入模型列表（推荐，避免手填错模型名）">
+            自动获取模型列表
           </button>
         </div>
         {apiMsg && <div className="api-msg">{apiMsg}</div>}

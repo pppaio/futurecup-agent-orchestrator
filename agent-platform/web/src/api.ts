@@ -81,6 +81,16 @@ export async function addProvider(input: {
   return json<ProviderInfo>(res);
 }
 
+/** 测试连接并自动获取该供应商的真实模型列表。 */
+export async function testProvider(input: { baseUrl: string; apiKey: string }): Promise<{ models: string[] }> {
+  const res = await fetch('/api/providers/test', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(input),
+  });
+  return json<{ models: string[] }>(res);
+}
+
 export async function removeProvider(id: string): Promise<{ ok: boolean }> {
   const res = await fetch(`/api/providers/${id}`, { method: 'DELETE' });
   return json<{ ok: boolean }>(res);

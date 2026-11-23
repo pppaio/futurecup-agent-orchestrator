@@ -257,6 +257,35 @@ app.get('/api/providers', (_req, res) => {
   res.json(gw ? gw.getProviders() : []);
 });
 
+/** 测试连接并自动获取真实模型列表（OpenAI 兼容 GET /models）。 */
+app.post('/api/providers/test', async (req, res) => {
+  const baseUrl = String(req.body?.baseUrl ?? '').trim().replace(/\/+$/, '');
+  const apiKey = String(req.body?.apiKey ?? '').trim();
+  if (!baseUrl || !apiKey) {
+    res.status(400).json({ error: 'Base URL 与 API Key 不能为空' });
+    return;
+  }
+  try {
+    const r = await fetch(`${baseUrl}/models`, {
+      headers: { Authorization: `Bearer ${apiKey}` },
+      signal: AbortSignal.timeout(15000),
+    });
+    if (!r.ok) {
+      res.status(400).json({ error: `获取模型列表失败 HTTP ${r.status}：${(await r.text().catch(() => '')).slice(0, 200)}（检查 Base URL 是否为 API 接口地址而非控制台页面）` });
+      return;
+    }
+    const data = (await r.json()) as { data?: { id?: string }[]; models?: { id?: string }[] };
+    const ids = [...(data.data ?? []), ...(data.models ?? [])].map((m) => m.id).filter((x): x is string => !!x);
+    if (ids.length === 0) {
+      res.status(400).json({ error: '接口未返回模型列表（可能不支持 GET /models），请到平台控制台查看真实模型名后手动填写' });
+      return;
+    }
+    res.json({ models: [...new Set(ids)].slice(0, 60) });
+  } catch (e) {
+    res.status(502).json({ error: String(e) });
+  }
+});
+
 /** 接入/更新一个供应商（用户在前端填 name/baseUrl/key/models）。key 不回传。 */
 app.post('/api/providers', (req, res) => {
   const name = String(req.body?.name ?? '').trim();
@@ -354,6 +383,15 @@ app.post('/api/runs', (req, res) => {
     string,
     { provider?: string; model?: string; effort?: 'low' | 'medium' | 'high' }
   >;
+  // 启动前校验：任何角色引用了未配置的供应商 → 直接给出可操作的报错，而不是跑到一半崩
+  for (const [agentId, ov] of Object.entries(config)) {
+    if (ov?.provider && !providers.has(ov.provider)) {
+      res.status(400).json({
+        error: `角色 ${agentId} 配置的供应商「${ov.provider}」尚未接入。请在「接入 API」面板添加它，或把该角色改回已接入的供应商。`,
+      });
+      return;
+    }
+  }
   // 智能调度模式：off=手动 / quality=质量优先(选强模型) / saving=省流(选便宜模型)
   const mode = String(req.body?.scheduler ?? 'off');
   const schedulerWeights =
