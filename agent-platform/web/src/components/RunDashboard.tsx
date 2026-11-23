@@ -100,11 +100,22 @@ export function RunDashboard({ runId, requirement, config, mode, onOpenReport, o
       switch (e.type) {
         case 'agent.message': {
           const p = e.payload as { role?: string; text?: string };
-          // 捕获分析师输出的开发计划（自主编排）
+          // 捕获分析师输出的开发计划（自主编排）；防御性解析：字段缺失时补默认值，防止渲染崩溃
           if (e.agent_id === 'analyst' && p.role === 'assistant') {
             try {
-              const j = JSON.parse(String(p.text ?? '')) as { plan?: { step: string; acceptance: string[] }[] };
-              if (Array.isArray(j.plan) && j.plan.length > 0) setPlan(j.plan);
+              const j = JSON.parse(String(p.text ?? '')) as {
+                plan?: { step?: unknown; acceptance?: unknown }[];
+              };
+              if (Array.isArray(j.plan) && j.plan.length > 0) {
+                const safe = j.plan
+                  .filter((s) => s && typeof s === 'object')
+                  .map((s) => ({
+                    step: String(s.step ?? ''),
+                    acceptance: Array.isArray(s.acceptance) ? s.acceptance.map((a) => String(a)) : [],
+                  }))
+                  .filter((s) => s.step.length > 0);
+                if (safe.length > 0) setPlan(safe);
+              }
             } catch {
               /* 非 JSON 忽略 */
             }

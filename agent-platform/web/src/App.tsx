@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { Component, useEffect, useState, type ReactNode } from 'react';
 import { getBalance, getHealth, getRuns, type RunHistoryItem } from './api';
 import type { BalanceInfo } from './api';
 import type { AgentConfig, HealthInfo } from './types';
@@ -8,6 +8,32 @@ import { VerifyReport } from './components/VerifyReport';
 import { HistoryView } from './components/HistoryView';
 
 type View = 'console' | 'dashboard' | 'report' | 'history';
+
+/** 渲染错误边界：任何界面异常都显示可恢复的提示，而不是整页黑屏。 */
+class ErrorBoundary extends Component<{ children: ReactNode }, { error: Error | null }> {
+  state: { error: Error | null } = { error: null };
+
+  static getDerivedStateFromError(error: Error) {
+    return { error };
+  }
+
+  render() {
+    if (this.state.error) {
+      return (
+        <div className="error-boundary">
+          <div className="error-boundary-icon">⚠️</div>
+          <h2>界面渲染遇到问题</h2>
+          <p>后端运行不受影响，刷新页面即可恢复。</p>
+          <pre>{String(this.state.error)}</pre>
+          <button className="btn btn-primary" onClick={() => window.location.reload()}>
+            刷新页面
+          </button>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
 
 export default function App() {
   const [view, setView] = useState<View>('console');
@@ -104,7 +130,8 @@ export default function App() {
       </header>
 
       <main className="main">
-        {view === 'console' && (
+        <ErrorBoundary>
+          {view === 'console' && (
           <>
             {activeRun && (
               <div className="resume-banner">
@@ -147,6 +174,7 @@ export default function App() {
             refreshKey={historyKey}
           />
         )}
+        </ErrorBoundary>
       </main>
     </div>
   );
