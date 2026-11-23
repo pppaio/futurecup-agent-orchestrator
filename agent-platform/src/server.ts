@@ -1,5 +1,6 @@
 import express from 'express';
 import { readFileSync, existsSync, readdirSync, writeFileSync, appendFileSync, statSync, rmSync } from 'node:fs';
+import { spawnSync } from 'node:child_process';
 import { join } from 'node:path';
 import { EventStore } from './event/store.js';
 import { MultiProviderLLM, FakeLLM, providersFromEnv } from './gateway/llm.js';
@@ -154,6 +155,17 @@ app.use(express.json({ limit: '2mb' }));
 
 // 静态托管前端构建产物：整个应用只跑在 :3000 一个端口
 const webDist = join(process.cwd(), 'web', 'dist');
+
+// 首次启动自愈：仓库不含 web/dist（构建产物不入库），新克隆环境缺少前端时自动安装依赖并构建
+if (!existsSync(join(webDist, 'index.html'))) {
+  console.log('[首次启动] 前端未构建，自动安装并构建（约 1 分钟，仅一次）...');
+  const inst = spawnSync('npm', ['--prefix', 'web', 'install'], { stdio: 'inherit', shell: true });
+  if (inst.status === 0) {
+    spawnSync('npm', ['--prefix', 'web', 'run', 'build'], { stdio: 'inherit', shell: true });
+  } else {
+    console.warn('[警告] 前端依赖安装失败，页面将不可用；可手动执行 npm --prefix web install && npm --prefix web run build');
+  }
+}
 app.use(express.static(webDist));
 
 const PORT = Number(process.env.PORT ?? 3000);
