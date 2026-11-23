@@ -117,12 +117,17 @@ export function TaskConsole({ requirement, setRequirement, onStarted, health }: 
       setApiMsg('名称 / Base URL / API Key 不能为空');
       return;
     }
+    const models = apiForm.models.split(',').map((s) => s.trim()).filter(Boolean);
+    if (models.length === 0) {
+      setApiMsg('模型列表不能为空：请至少填一个模型名（多个用英文逗号分隔，如 gpt-4o,gpt-4o-mini）。没有模型名，角色配置下拉里就不会出现任何选项。');
+      return;
+    }
     try {
       await addProvider({
         name: apiForm.name.trim(),
         baseUrl: apiForm.baseUrl.trim(),
         apiKey: apiForm.apiKey.trim(),
-        models: apiForm.models.split(',').map((s) => s.trim()).filter(Boolean),
+        models,
       });
       setApiMsg(`已接入「${apiForm.name.trim()}」`);
       setApiForm({ name: '', baseUrl: '', apiKey: '', models: '' });
@@ -317,11 +322,17 @@ export function TaskConsole({ requirement, setRequirement, onStarted, health }: 
                         <option value={`deepseek:${item.model}`}>{item.model}</option>
                       )}
                       {providers.map((p) =>
-                        p.models.map((m) => (
-                          <option key={`${p.id}:${m}`} value={`${p.id}:${m}`}>
-                            {p.name} · {m}
+                        p.models.length === 0 ? (
+                          <option key={`${p.id}:empty`} value={`${p.id}:`} disabled>
+                            {p.name}（未配置模型——请在「接入 API」里填模型列表）
                           </option>
-                        )),
+                        ) : (
+                          p.models.map((m) => (
+                            <option key={`${p.id}:${m}`} value={`${p.id}:${m}`}>
+                              {p.name} · {m}
+                            </option>
+                          ))
+                        ),
                       )}
                     </select>
                   </td>

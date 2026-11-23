@@ -269,6 +269,10 @@ app.post('/api/providers', (req, res) => {
     res.status(400).json({ error: '名称 / Base URL / API Key 均不能为空' });
     return;
   }
+  if (models.length === 0) {
+    res.status(400).json({ error: '模型列表不能为空：请至少填一个模型名（多个用英文逗号分隔，如 gpt-4o,gpt-4o-mini）' });
+    return;
+  }
   const slug = name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
   // 中文/非 ASCII 名称会退化为空，用随机后缀保证 id 唯一且不冲突
   const id = slug || `custom-${Math.random().toString(36).slice(2, 6)}`;
