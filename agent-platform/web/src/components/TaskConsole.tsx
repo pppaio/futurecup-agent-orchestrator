@@ -397,12 +397,21 @@ export function TaskConsole({ requirement, setRequirement, onStarted, health }: 
         <div className="config-head">
           <span className="field-label">接入 API：填你自己的供应商（OpenAI 兼容口径：DeepSeek/通义千问/Kimi/智谱/OpenAI 等）</span>
         </div>
+        <div className="api-guide">
+          <b>📋 接入四步（跟着做就不会错）：</b>
+          <ol>
+            <li><b>点</b>下面任意一个供应商按钮 —— 名称、地址、模型名自动填好；</li>
+            <li><b>贴</b>你自己的 API Key（唯一要你动手的）；</li>
+            <li><b>点「自动获取模型列表」</b> —— 向接口核实真实模型名（防止手填错）；</li>
+            <li><b>保存</b> → 去「角色配置」把<b>每个角色</b>的模型都换成这个供应商，再点「开始生成」。</li>
+          </ol>
+        </div>
         <div className="api-presets">
-          <span className="config-hint">常见供应商点一下自动填好（只需贴 Key）：</span>
+          <span className="config-hint">👇 第 1 步：先点一个（自动填好，只需贴 Key）：</span>
           {PROVIDER_PRESETS.map((p) => (
             <button
               key={p.name}
-              className="btn btn-ghost"
+              className="btn btn-accent"
               onClick={() => setApiForm((f) => ({ ...f, name: p.name, baseUrl: p.baseUrl, models: p.models, apiKey: '' }))}
             >
               {p.name}
@@ -412,34 +421,34 @@ export function TaskConsole({ requirement, setRequirement, onStarted, health }: 
         <div className="api-form">
           <input
             className="api-input"
-            placeholder="名称（如：通义千问）"
+            placeholder="名称（点上面按钮会自动填）"
             value={apiForm.name}
             onChange={(e) => setApiForm((f) => ({ ...f, name: e.target.value }))}
           />
           <input
             className="api-input api-input-wide"
-            placeholder="Base URL（如 https://dashscope.aliyuncs.com/compatible-mode/v1）"
+            placeholder="Base URL（点上面按钮会自动填）"
             value={apiForm.baseUrl}
             onChange={(e) => setApiForm((f) => ({ ...f, baseUrl: e.target.value }))}
           />
           <input
             className="api-input"
             type="password"
-            placeholder="API Key"
+            placeholder="API Key（第 2 步：粘贴你的 Key）"
             value={apiForm.apiKey}
             onChange={(e) => setApiForm((f) => ({ ...f, apiKey: e.target.value }))}
           />
           <input
             className="api-input"
-            placeholder="模型列表，逗号分隔（如 qwen-max,qwen-plus）"
+            placeholder="模型列表（第 3 步：点「自动获取模型列表」自动填）"
             value={apiForm.models}
             onChange={(e) => setApiForm((f) => ({ ...f, models: e.target.value }))}
           />
           <button className="btn btn-primary" onClick={submitApi}>
-            保存供应商
+            第 4 步 · 保存供应商
           </button>
-          <button className="btn btn-ghost" onClick={fetchModels} title="向该供应商接口查询真实模型名，自动填入模型列表（推荐，避免手填错模型名）">
-            自动获取模型列表
+          <button className="btn btn-accent" onClick={fetchModels} title="向该供应商接口查询真实模型名，自动填入模型列表（推荐，避免手填错模型名）">
+            第 3 步 · 自动获取模型列表
           </button>
         </div>
         {apiMsg && <div className="api-msg">{apiMsg}</div>}
