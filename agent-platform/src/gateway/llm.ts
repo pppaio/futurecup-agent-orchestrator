@@ -15,6 +15,8 @@ export interface LLMResult {
   text: string;
   json?: unknown;
   usage: LLMUsage;
+  /** 工具自检循环耗尽后按"最后一版内容"返回（交由硬验证判定）。 */
+  selfCheckExhausted?: boolean;
 }
 
 export interface ToolDef {
@@ -138,6 +140,9 @@ export class MultiProviderLLM implements LLMGateway {
     // Function Calling 循环：模型调用工具 → 执行 → 结果回填 → 继续，直到给出最终内容
     type ApiMessage = { role: string; content: string | null; tool_calls?: unknown[]; tool_call_id?: string };
     const msgs: ApiMessage[] = opts.messages.map((m) => ({ role: m.role, content: m.content }));
+    let lastContent = '';
+    let lastUsage: { inputTokens: number; outputTokens: number; reasoningTokens?: number } | undefined;
+    let toolRounds = 0;
     for (let round = 0; round < 6; round++) {
       const res = await fetch(`${provider.baseUrl}/chat/completions`, {
         method: 'POST',
@@ -157,13 +162,21 @@ export class MultiProviderLLM implements LLMGateway {
         usage?: { prompt_tokens: number; completion_tokens: number; completion_tokens_details?: { reasoning_tokens?: number } };
       };
       this.total.calls++;
-      this.total.input += data.usage?.prompt_tokens ?? 0;
-      this.total.output += data.usage?.completion_tokens ?? 0;
-      this.total.reasoning += data.usage?.completion_tokens_details?.reasoning_tokens ?? 0;
+      const usage = {
+        inputTokens: data.usage?.prompt_tokens ?? 0,
+        outputTokens: data.usage?.completion_tokens ?? 0,
+        reasoningTokens: data.usage?.completion_tokens_details?.reasoning_tokens,
+      };
+      lastUsage = usage;
+      this.total.input += usage.inputTokens;
+      this.total.output += usage.outputTokens;
+      this.total.reasoning += usage.reasoningTokens ?? 0;
 
       const msg = data.choices?.[0]?.message;
       const toolCalls = msg?.tool_calls ?? [];
       if (toolCalls.length > 0 && opts.executeTool) {
+        toolRounds++;
+        if (msg?.content) lastContent = msg.content;
         msgs.push({ role: 'assistant', content: msg?.content ?? null, tool_calls: toolCalls });
         for (const tc of toolCalls) {
           let args: Record<string, unknown> = {};
@@ -190,14 +203,28 @@ export class MultiProviderLLM implements LLMGateway {
       return {
         text: content,
         json,
-        usage: {
-          inputTokens: data.usage?.prompt_tokens ?? 0,
-          outputTokens: data.usage?.completion_tokens ?? 0,
-          reasoningTokens: data.usage?.completion_tokens_details?.reasoning_tokens,
-        },
+        usage,
       };
     }
-    throw new Error(`${provider.name} 工具调用超过 6 轮未收敛`);
+    // 工具自检循环耗尽：把最后一版内容交给上层，由硬验证（L1）判定，而不是直接判节点死刑。
+    if (lastContent.trim().length === 0) {
+      throw new Error(`${provider.name} 工具调用超过 6 轮未收敛（且未产出任何内容）`);
+    }
+    console.warn(`[LLM] ${provider.name} 自检 ${toolRounds} 轮未收敛，返回最后一版内容交由硬验证判定`);
+    let json: unknown;
+    if (opts.json) {
+      try {
+        json = JSON.parse(lastContent);
+      } catch {
+        throw new Error(`${provider.name} 自检未收敛且最后输出非法 JSON：${lastContent.slice(0, 300)}`);
+      }
+    }
+    return {
+      text: lastContent,
+      json,
+      usage: lastUsage ?? { inputTokens: 0, outputTokens: 0 },
+      selfCheckExhausted: true,
+    };
   }
 
   private async handleResponse(
