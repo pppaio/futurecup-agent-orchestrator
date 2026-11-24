@@ -383,15 +383,9 @@ app.post('/api/runs', (req, res) => {
     string,
     { provider?: string; model?: string; effort?: 'low' | 'medium' | 'high' }
   >;
-  // 启动前校验：任何角色引用了未配置的供应商 → 直接给出可操作的报错，而不是跑到一半崩
-  for (const [agentId, ov] of Object.entries(config)) {
-    if (ov?.provider && !providers.has(ov.provider)) {
-      res.status(400).json({
-        error: `角色 ${agentId} 配置的供应商「${ov.provider}」尚未接入。请在「接入 API」面板添加它，或把该角色改回已接入的供应商。`,
-      });
-      return;
-    }
-  }
+  // 编排模式：fixed=固定流水线 / auto=自主编排（分析师出计划，引擎逐步编排）
+  const autoMode = String(req.body?.mode ?? 'fixed') === 'auto';
+  const wf = autoMode ? AUTO_WF : GAME_GEN_WF;
   // 智能调度模式：off=手动 / quality=质量优先(选强模型) / saving=省流(选便宜模型)
   const mode = String(req.body?.scheduler ?? 'off');
   const schedulerWeights =
@@ -414,9 +408,23 @@ app.post('/api/runs', (req, res) => {
     timeout_sec: num(rawLimits.timeout_sec),
     target_score: num(rawLimits.target_score),
   };
-  // 编排模式：fixed=固定流水线 / auto=自主编排（分析师出计划，引擎逐步编排）
-  const autoMode = String(req.body?.mode ?? 'fixed') === 'auto';
-  const wf = autoMode ? AUTO_WF : GAME_GEN_WF;
+  // 启动前校验（仅真实网关模式）：只校验"工作流真正用到的角色"引用的供应商——
+  // 演示模式（Fake LLM）不依赖供应商、未参与工作流的角色（如 reviser）也不拦。
+  if (!(llmBox.current instanceof FakeLLM)) {
+    const usedAgents = new Set<string>();
+    for (const n of wf.nodes) {
+      if (n.agent) usedAgents.add(n.agent);
+      for (const c of n.candidates ?? []) usedAgents.add(c);
+    }
+    for (const [agentId, ov] of Object.entries(config)) {
+      if (usedAgents.has(agentId) && ov?.provider && !providers.has(ov.provider)) {
+        res.status(400).json({
+          error: `角色 ${agentId} 配置的供应商「${ov.provider}」尚未接入。请在「接入 API」面板添加它，或把该角色改回已接入的供应商。`,
+        });
+        return;
+      }
+    }
+  }
   const runId = engine.start(wf, { requirement }, { overrides: config, schedulerWeights, limits });
   runsOrder.unshift(runId);
   res.json({ runId });
